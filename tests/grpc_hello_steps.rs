@@ -1,9 +1,6 @@
 use std::time::Duration;
 
-use bdd_rust_multiprotocol_server::hello::{
-    hello_client::HelloClient,
-    HelloRequest,
-};
+use bdd_rust_multiprotocol_server::hello::{hello_client::HelloClient, HelloRequest};
 use cucumber::{given, then, when, World};
 use tokio::task::JoinHandle;
 
@@ -30,20 +27,19 @@ async fn call_grpc_hello(world: &mut GrpcWorld, name: String) {
         .await
         .expect("Failed to connect to the gRPC server");
     let response = client
-        .say_hello(HelloRequest { name })
+        .say_hello(HelloRequest {
+            name,
+            payload: String::new(),
+        })
         .await
         .expect("Failed to call the gRPC hello method");
 
     world.response_message = Some(response.into_inner().message);
 }
 
-#[then(expr = "the gRPC response message should start with {string}")]
-async fn grpc_response_should_start_with(world: &mut GrpcWorld, expected: String) {
-    let actual = world
-        .response_message
-        .as_ref()
-        .expect("No gRPC response message was captured");
-    assert!(actual.starts_with(&expected));
+#[then(expr = "the gRPC response message should be {string}")]
+async fn grpc_response_should_be(world: &mut GrpcWorld, expected: String) {
+    assert_eq!(world.response_message.as_deref(), Some(expected.as_str()));
 }
 
 #[tokio::main]

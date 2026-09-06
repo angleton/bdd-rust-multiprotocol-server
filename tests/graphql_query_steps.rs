@@ -20,9 +20,7 @@ async fn server_is_running(world: &mut GraphqlWorld) {
         .expect("Failed to bind test server to port 8080");
 
     let handle = tokio::spawn(async move {
-        axum::serve(listener, app)
-            .await
-            .expect("Server failed");
+        axum::serve(listener, app).await.expect("Server failed");
     });
 
     world.server_handle = Some(handle);
@@ -48,8 +46,8 @@ async fn send_graphql_query(world: &mut GraphqlWorld, field: String) {
     );
 }
 
-#[then(expr = "the GraphQL response data should identify {string}")]
-async fn graphql_response_should_identify(world: &mut GraphqlWorld, expected: String) {
+#[then(expr = "the GraphQL response data should be {string}")]
+async fn graphql_response_should_be(world: &mut GraphqlWorld, expected: String) {
     let actual = world
         .response_body
         .as_ref()
@@ -57,10 +55,7 @@ async fn graphql_response_should_identify(world: &mut GraphqlWorld, expected: St
         .and_then(|data| data.get("hello"))
         .and_then(Value::as_str);
 
-    assert!(
-        actual.is_some_and(|value| value.starts_with(&format!("{expected} in "))),
-        "unexpected GraphQL response value: {actual:?}"
-    );
+    assert_eq!(actual, Some(expected.as_str()));
 }
 
 #[tokio::main]
