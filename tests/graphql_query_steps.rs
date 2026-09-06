@@ -20,9 +20,7 @@ async fn server_is_running(world: &mut GraphqlWorld) {
         .expect("Failed to bind test server to port 8080");
 
     let handle = tokio::spawn(async move {
-        axum::serve(listener, app)
-            .await
-            .expect("Server failed");
+        axum::serve(listener, app).await.expect("Server failed");
     });
 
     world.server_handle = Some(handle);

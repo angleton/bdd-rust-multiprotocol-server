@@ -21,10 +21,10 @@ Every protocol performs a hello request, but each keeps its era's wire model:
 
 | Protocol | Request | Success response |
 | --- | --- | --- |
-| REST | `GET /hello` | HTTP `200` with `REST in <duration> us` |
-| GraphQL | `POST /graphql` with `{ "query": "{ hello }" }` | JSON with `data.hello = "GraphQL in <duration> us"` |
-| SOAP | `POST /soap` with a SOAP XML `Envelope` and `PingRequest` body | XML `Envelope` containing `SOAP in <duration> us` |
-| gRPC | `Hello.SayHello` on port `8081` | `HelloReply.message = "gRPC in <duration> us"` |
+| REST | `GET /hello?payload=...` | HTTP `200` with `REST in <duration> us: <payload>` |
+| GraphQL | `POST /graphql` with a `payload` variable | JSON with `data.hello = "GraphQL in <duration> us: <payload>"` |
+| SOAP | `POST /soap` with a SOAP XML `Envelope` and `PingRequest` body | XML `Envelope` containing `SOAP in <duration> us: <payload>` |
+| gRPC | `Hello.SayHello` with `payload` on port `8081` | `HelloReply.message = "gRPC in <duration> us: <payload>"` |
 
 The SOAP handler deliberately models the older XML contract: it parses the envelope, body, and operation instead of accepting arbitrary text. Invalid SOAP-shaped input receives HTTP `400`; valid requests receive `text/xml`.
 
@@ -32,13 +32,14 @@ Useful manual checks while debugging:
 
 ```bash
 curl http://127.0.0.1:8080/health
-curl http://127.0.0.1:8080/hello
+curl "http://127.0.0.1:8080/hello?payload=debug"
 curl -X POST http://127.0.0.1:8080/graphql \
 	-H "content-type: application/json" \
-	-d '{"query":"{ hello }"}'
+	-d '{"query":"query($payload: String!) { hello(payload: $payload) }","variables":{"payload":"debug"}}'
 curl -X POST http://127.0.0.1:8080/soap \
 	-H "content-type: text/xml" \
-	--data-binary @soap-request.xml
+	--data-raw '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><PingRequest><Message>debug</Message></PingRequest></soap:Body></soap:Envelope>'
+curl http://127.0.0.1:8080/telemetry
 ```
 
 The gRPC contract is in [proto/hello.proto](proto/hello.proto). The generated client is used by the BDD test, so `cargo test` verifies the RPC without requiring a separate client tool.
@@ -60,6 +61,42 @@ The feature files describe the expected behavior:
 - [features/grpc_hello.feature](features/grpc_hello.feature) checks the generated gRPC `SayHello` contract.
 
 Each scenario starts the server, sends a real request, and asserts the response. The gRPC scenario also proves that the generated protobuf client and server agree on the service definition.
+
+## Debugging
+
+Run these commands from the project directory:
+
+```bash
+cargo fmt --all -- --check
+cargo check
+cargo test --tests
+```
+
+Run one protocol scenario while debugging a failure:
+
+```bash
+cargo test --test rest_get_steps
+cargo test --test graphql_query_steps
+cargo test --test soap_acknowledgement_steps
+cargo test --test grpc_hello_steps
+```
+
+For a live server investigation, start `cargo run` in one terminal and use the manual requests above from another. HTTP, GraphQL, and SOAP use port `8080`; gRPC uses port `8081`. `/telemetry` reports request counts, failures, average handler duration in microseconds, and byte totals. The response timing text is per request, while the telemetry duration is an aggregate average.
+
+For Rust panic details, enable a backtrace before running the failing command. In PowerShell:
+
+```powershell
+$env:RUST_BACKTRACE = "1"
+cargo test --test soap_acknowledgement_steps
+```
+
+For a fast payload-path smoke test, use two runs, ten measured requests, and a 1 KiB generated payload:
+
+```bash
+cargo run --example protocol_benchmark -- 10 2 1024
+```
+
+If the build fails while generating gRPC code, verify that `protoc --version` succeeds and that `protoc` is available on `PATH`.
 
 ## Telemetry
 
@@ -85,15 +122,16 @@ Run the statistically stronger default benchmark:
 cargo run --release --example protocol_benchmark
 ```
 
-The default experiment performs `20` runs with `1,000` measured requests per protocol per run, producing `20,000` measured samples per protocol. Each protocol also receives `20` warm-up requests per run, which are excluded from the results. Protocol order is randomized with a fixed seed so the run is reproducible while avoiding a permanent first-or-last position advantage.
+The default experiment performs `20` runs with `1,000` measured requests per protocol per run and a generated `4,096`-byte payload, producing `20,000` measured samples per protocol. Each protocol also receives `20` warm-up requests per run, which are excluded from the results. Protocol order is randomized with a fixed seed so the run is reproducible while avoiding a permanent first-or-last position advantage.
 
-For a quick smoke test, override the positional arguments with `requests_per_run` and `runs`:
+Override the positional arguments with `requests_per_run`, `runs`, and `payload_bytes`:
 
 ```bash
-cargo run --example protocol_benchmark -- 10 2
+cargo run --example protocol_benchmark -- 10 2 1024
+cargo run --release --example protocol_benchmark -- 1000 20 65536
 ```
 
-The benchmark sends the same logical hello request through REST, GraphQL, SOAP, and gRPC. It reports the aggregate sample count, average, median, p95, standard deviation, 95% confidence interval for the average, and failures, then names the winner as the protocol with the lowest average end-to-end latency among protocols with zero failures. The confidence interval is calculated from the independent run-level averages rather than treating every request as independent. It also prints the server `/telemetry` snapshot for the same run.
+The payload generator produces a deterministic alphanumeric string of exactly `payload_bytes` characters. That same value is sent and echoed through REST, GraphQL, SOAP, and gRPC, so the run exercises request parsing, serialization, transport, and response handling for the selected size. The benchmark reports the aggregate sample count, average, median, p95, standard deviation, 95% confidence interval for the average, and failures, then names the winner as the protocol with the lowest average end-to-end latency among protocols with zero failures. The confidence interval is calculated from the independent run-level averages rather than treating every request as independent. It also prints the server `/telemetry` snapshot for the same run.
 
 The benchmark table labels are `protocol`, `samples`, `average_us` (mean latency in microseconds), `median_us` (50th percentile latency), `p95_us` (95th percentile latency), `95%_ci_us` (confidence interval for the mean), `stddev_us`, and `failures`:
 

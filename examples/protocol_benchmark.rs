@@ -1,9 +1,9 @@
-use std::{env, time::{Duration, Instant}};
-
-use bdd_rust_multiprotocol_server::hello::{
-    hello_client::HelloClient,
-    HelloRequest,
+use std::{
+    env,
+    time::{Duration, Instant},
 };
+
+use bdd_rust_multiprotocol_server::hello::{hello_client::HelloClient, HelloRequest};
 use rand::{seq::SliceRandom, SeedableRng};
 use reqwest::Client;
 
@@ -12,7 +12,7 @@ const GRPC_ENDPOINT: &str = "http://127.0.0.1:18081";
 const WARMUP_REQUESTS: usize = 20;
 const DEFAULT_ITERATIONS: usize = 1_000;
 const DEFAULT_RUNS: usize = 20;
-const SOAP_REQUEST: &str = r#"<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><PingRequest><Message>benchmark</Message></PingRequest></soap:Body></soap:Envelope>"#;
+const DEFAULT_PAYLOAD_BYTES: usize = 4_096;
 
 #[derive(Default)]
 struct Stats {
@@ -63,8 +63,7 @@ impl Stats {
         if self.run_averages_us.is_empty() {
             return (0.0, 0.0);
         }
-        let average = self.run_averages_us.iter().sum::<f64>()
-            / self.run_averages_us.len() as f64;
+        let average = self.run_averages_us.iter().sum::<f64>() / self.run_averages_us.len() as f64;
         let variance = if self.run_averages_us.len() < 2 {
             0.0
         } else {
@@ -99,6 +98,12 @@ async fn main() {
         .nth(2)
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(DEFAULT_RUNS);
+    let payload_size = env::args()
+        .nth(3)
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_PAYLOAD_BYTES);
+    let payload = generate_payload(payload_size);
+    let soap_request = soap_request(&payload);
     let server_address = "127.0.0.1:18080".parse().unwrap();
 
     tokio::spawn(async move {
@@ -122,10 +127,10 @@ async fn main() {
 
         for protocol in order {
             let stats = match protocol {
-                "REST" => benchmark_rest(&client, iterations).await,
-                "GraphQL" => benchmark_graphql(&client, iterations).await,
-                "SOAP" => benchmark_soap(&client, iterations).await,
-                "gRPC" => benchmark_grpc(iterations).await,
+                "REST" => benchmark_rest(&client, iterations, &payload).await,
+                "GraphQL" => benchmark_graphql(&client, iterations, &payload).await,
+                "SOAP" => benchmark_soap(&client, iterations, &soap_request).await,
+                "gRPC" => benchmark_grpc(iterations, &payload).await,
                 _ => unreachable!(),
             };
             results
@@ -137,7 +142,7 @@ async fn main() {
         }
     }
 
-    println!("Protocol benchmark ({runs} runs x {iterations} requests each; {WARMUP_REQUESTS} warm-ups excluded)");
+    println!("Protocol benchmark ({runs} runs x {iterations} requests each; payload {payload_size} bytes; {WARMUP_REQUESTS} warm-ups excluded)");
     println!("protocol | samples | average_us | median_us | p95_us | 95%_ci_us       | stddev_us | failures");
     println!("---------|---------|------------|-----------|--------|------------------|-----------|---------");
     for (protocol, stats) in &results {
@@ -175,6 +180,19 @@ async fn main() {
     println!("{}", serde_json::to_string_pretty(&telemetry).unwrap());
 }
 
+fn generate_payload(size: usize) -> String {
+    const ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    (0..size)
+        .map(|index| ALPHABET[index % ALPHABET.len()] as char)
+        .collect()
+}
+
+fn soap_request(payload: &str) -> String {
+    format!(
+        "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><PingRequest><Message>{payload}</Message></PingRequest></soap:Body></soap:Envelope>"
+    )
+}
+
 async fn wait_for_http() {
     let client = Client::new();
     for _ in 0..100 {
@@ -191,15 +209,20 @@ async fn wait_for_http() {
     panic!("server did not become ready");
 }
 
-async fn benchmark_rest(client: &Client, iterations: usize) -> Stats {
+async fn benchmark_rest(client: &Client, iterations: usize, payload: &str) -> Stats {
     let mut stats = Stats::default();
     for _ in 0..WARMUP_REQUESTS {
-        let _ = client.get(format!("{HTTP_BASE}/hello")).send().await;
+        let _ = client
+            .get(format!("{HTTP_BASE}/hello"))
+            .query(&[("payload", payload)])
+            .send()
+            .await;
     }
     for _ in 0..iterations {
         let started = Instant::now();
         let success = client
             .get(format!("{HTTP_BASE}/hello"))
+            .query(&[("payload", payload)])
             .send()
             .await
             .and_then(|response| response.error_for_status())
@@ -209,12 +232,16 @@ async fn benchmark_rest(client: &Client, iterations: usize) -> Stats {
     stats
 }
 
-async fn benchmark_graphql(client: &Client, iterations: usize) -> Stats {
+async fn benchmark_graphql(client: &Client, iterations: usize, payload: &str) -> Stats {
     let mut stats = Stats::default();
+    let request = serde_json::json!({
+        "query": "query($payload: String!) { hello(payload: $payload) }",
+        "variables": {"payload": payload}
+    });
     for _ in 0..WARMUP_REQUESTS {
         let _ = client
             .post(format!("{HTTP_BASE}/graphql"))
-            .json(&serde_json::json!({"query": "{ hello }"}))
+            .json(&request)
             .send()
             .await;
     }
@@ -222,7 +249,7 @@ async fn benchmark_graphql(client: &Client, iterations: usize) -> Stats {
         let started = Instant::now();
         let success = client
             .post(format!("{HTTP_BASE}/graphql"))
-            .json(&serde_json::json!({"query": "{ hello }"}))
+            .json(&request)
             .send()
             .await
             .and_then(|response| response.error_for_status())
@@ -232,13 +259,13 @@ async fn benchmark_graphql(client: &Client, iterations: usize) -> Stats {
     stats
 }
 
-async fn benchmark_soap(client: &Client, iterations: usize) -> Stats {
+async fn benchmark_soap(client: &Client, iterations: usize, request: &str) -> Stats {
     let mut stats = Stats::default();
     for _ in 0..WARMUP_REQUESTS {
         let _ = client
             .post(format!("{HTTP_BASE}/soap"))
             .header("content-type", "text/xml")
-            .body(SOAP_REQUEST)
+            .body(request.to_owned())
             .send()
             .await;
     }
@@ -247,7 +274,7 @@ async fn benchmark_soap(client: &Client, iterations: usize) -> Stats {
         let success = client
             .post(format!("{HTTP_BASE}/soap"))
             .header("content-type", "text/xml")
-            .body(SOAP_REQUEST)
+            .body(request.to_owned())
             .send()
             .await
             .and_then(|response| response.error_for_status())
@@ -257,20 +284,26 @@ async fn benchmark_soap(client: &Client, iterations: usize) -> Stats {
     stats
 }
 
-async fn benchmark_grpc(iterations: usize) -> Stats {
+async fn benchmark_grpc(iterations: usize, payload: &str) -> Stats {
     let mut client = HelloClient::connect(GRPC_ENDPOINT)
         .await
         .expect("failed to connect to gRPC server");
     for _ in 0..WARMUP_REQUESTS {
         let _ = client
-            .say_hello(HelloRequest { name: "warmup".to_string() })
+            .say_hello(HelloRequest {
+                name: "warmup".to_string(),
+                payload: payload.to_string(),
+            })
             .await;
     }
     let mut stats = Stats::default();
     for _ in 0..iterations {
         let started = Instant::now();
         let success = client
-            .say_hello(HelloRequest { name: "benchmark".to_string() })
+            .say_hello(HelloRequest {
+                name: "benchmark".to_string(),
+                payload: payload.to_string(),
+            })
             .await
             .is_ok();
         stats.record(started, success);
