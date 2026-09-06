@@ -37,13 +37,9 @@ async fn call_grpc_hello(world: &mut GrpcWorld, name: String) {
     world.response_message = Some(response.into_inner().message);
 }
 
-#[then(expr = "the gRPC response message should start with {string}")]
-async fn grpc_response_should_start_with(world: &mut GrpcWorld, expected: String) {
-    let actual = world
-        .response_message
-        .as_ref()
-        .expect("No gRPC response message was captured");
-    assert!(actual.starts_with(&expected));
+#[then(expr = "the gRPC response message should be {string}")]
+async fn grpc_response_should_be(world: &mut GrpcWorld, expected: String) {
+    assert_eq!(world.response_message.as_deref(), Some(expected.as_str()));
 }
 
 #[tokio::main]

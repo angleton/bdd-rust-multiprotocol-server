@@ -21,10 +21,10 @@ Every protocol performs a hello request, but each keeps its era's wire model:
 
 | Protocol | Request | Success response |
 | --- | --- | --- |
-| REST | `GET /hello?payload=...` | HTTP `200` with `REST in <duration> us` |
-| GraphQL | `POST /graphql` with a `payload` variable | JSON with `data.hello = "GraphQL in <duration> us"` |
-| SOAP | `POST /soap` with a SOAP XML `Envelope` and `PingRequest` body | XML `Envelope` containing `SOAP in <duration> us` |
-| gRPC | `Hello.SayHello` with `payload` on port `8081` | `HelloReply.message = "gRPC in <duration> us"` |
+| REST | `GET /hello?payload=...` | HTTP `200` with `REST message` |
+| GraphQL | `POST /graphql` with a `payload` variable | JSON with `data.hello = "GraphQL message"` |
+| SOAP | `POST /soap` with a SOAP XML `Envelope` and `PingRequest` body | XML `Envelope` containing `SOAP message` |
+| gRPC | `Hello.SayHello` with `payload` on port `8081` | `HelloReply.message = "gRPC message"` |
 
 The SOAP handler deliberately models the older XML contract: it parses the envelope, body, and operation instead of accepting arbitrary text. Invalid SOAP-shaped input receives HTTP `400`; valid requests receive `text/xml`.
 
@@ -81,7 +81,7 @@ cargo test --test soap_acknowledgement_steps
 cargo test --test grpc_hello_steps
 ```
 
-For a live server investigation, start `cargo run` in one terminal and use the manual requests above from another. HTTP, GraphQL, and SOAP use port `8080`; gRPC uses port `8081`. `/telemetry` reports request counts, failures, average handler duration in microseconds, and byte totals. The response timing text is per request, while the telemetry duration is an aggregate average.
+For a live server investigation, start `cargo run` in one terminal and use the manual requests above from another. HTTP, GraphQL, and SOAP use port `8080`; gRPC uses port `8081`. `/telemetry` reports request counts, failures, average handler duration in microseconds, and byte totals. Successful protocol responses identify the protocol; timing remains available through `/telemetry` and the benchmark output.
 
 For Rust panic details, enable a backtrace before running the failing command. In PowerShell:
 
