@@ -21,10 +21,10 @@ Every protocol performs a hello request, but each keeps its era's wire model:
 
 | Protocol | Request | Success response |
 | --- | --- | --- |
-| REST | `GET /hello?payload=...` | HTTP `200` with `REST in <duration> us: <payload>` |
-| GraphQL | `POST /graphql` with a `payload` variable | JSON with `data.hello = "GraphQL in <duration> us: <payload>"` |
-| SOAP | `POST /soap` with a SOAP XML `Envelope` and `PingRequest` body | XML `Envelope` containing `SOAP in <duration> us: <payload>` |
-| gRPC | `Hello.SayHello` with `payload` on port `8081` | `HelloReply.message = "gRPC in <duration> us: <payload>"` |
+| REST | `GET /hello?payload=...` | HTTP `200` with `REST in <duration> us` |
+| GraphQL | `POST /graphql` with a `payload` variable | JSON with `data.hello = "GraphQL in <duration> us"` |
+| SOAP | `POST /soap` with a SOAP XML `Envelope` and `PingRequest` body | XML `Envelope` containing `SOAP in <duration> us` |
+| gRPC | `Hello.SayHello` with `payload` on port `8081` | `HelloReply.message = "gRPC in <duration> us"` |
 
 The SOAP handler deliberately models the older XML contract: it parses the envelope, body, and operation instead of accepting arbitrary text. Invalid SOAP-shaped input receives HTTP `400`; valid requests receive `text/xml`.
 

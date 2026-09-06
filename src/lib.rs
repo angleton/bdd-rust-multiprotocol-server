@@ -113,16 +113,12 @@ struct QueryRoot;
 
 #[Object]
 impl QueryRoot {
-    async fn hello(&self, context: &Context<'_>, payload: Option<String>) -> String {
+    async fn hello(&self, context: &Context<'_>, _payload: Option<String>) -> String {
         let started = context
             .data_opt::<Instant>()
             .copied()
             .unwrap_or_else(Instant::now);
-        protocol_response(
-            "GraphQL",
-            started.elapsed(),
-            payload.as_deref().unwrap_or(""),
-        )
+        protocol_response("GraphQL", started.elapsed())
     }
 }
 
@@ -157,7 +153,7 @@ async fn rest_hello_handler(
     let started = Instant::now();
     let duration = started.elapsed();
     let payload = query.payload.unwrap_or_default();
-    let response = protocol_response("REST", duration, &payload);
+    let response = protocol_response("REST", duration);
     state.telemetry.record(
         "rest",
         true,
@@ -189,7 +185,7 @@ async fn graphql_handler(
 
 async fn handle_soap_request(State(state): State<AppState>, body: Bytes) -> impl IntoResponse {
     let started = Instant::now();
-    let Some(payload) = soap_ping_payload(&body) else {
+    let Some(_payload) = soap_ping_payload(&body) else {
         state
             .telemetry
             .record("soap", false, started.elapsed(), body.len() as u64, 0);
@@ -202,7 +198,7 @@ async fn handle_soap_request(State(state): State<AppState>, body: Bytes) -> impl
     };
 
     let duration = started.elapsed();
-    let response_body = soap_acknowledgement(protocol_response("SOAP", duration, &payload));
+    let response_body = soap_acknowledgement(protocol_response("SOAP", duration));
     state.telemetry.record(
         "soap",
         true,
@@ -281,8 +277,8 @@ fn soap_acknowledgement(message: String) -> String {
     )
 }
 
-fn protocol_response(protocol: &str, duration: Duration, payload: &str) -> String {
-    format!("{protocol} in {} us: {payload}", duration.as_micros())
+fn protocol_response(protocol: &str, duration: Duration) -> String {
+    format!("{protocol} in {} us", duration.as_micros())
 }
 
 pub async fn run(addr: SocketAddr) {
@@ -328,7 +324,7 @@ impl hello::hello_server::Hello for GrpcHello {
         let name = request.name;
         let payload = request.payload;
         let duration = started.elapsed();
-        let response_message = protocol_response("gRPC", duration, &payload);
+        let response_message = protocol_response("gRPC", duration);
         self.telemetry.record(
             "grpc",
             true,
