@@ -1,12 +1,3 @@
-# BDD Rust Multiprotocol Server
-
-A Rust reference project demonstrating a single server exposing REST, gRPC, GraphQL, and SOAP-style endpoints with BDD tests verifying consistent behavior across protocols.
-
-## Run
-
-```bash
-cargo run
-
 ## BDD Rust Multiprotocol Server
 
 A Rust reference server that exposes the same small `hello` operation through REST, GraphQL, SOAP, and gRPC. The project uses Cucumber-style BDD scenarios for the protocol contracts and records request telemetry so the protocols can be compared with the same workload.
