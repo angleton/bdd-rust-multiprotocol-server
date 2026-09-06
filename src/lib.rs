@@ -2,7 +2,7 @@ use std::{
     collections::BTreeMap,
     net::SocketAddr,
     sync::{Arc, Mutex},
-    time::Instant,
+    time::{Duration, Instant},
 };
 use axum::{
     body::Bytes,
@@ -13,7 +13,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use async_graphql::{EmptyMutation, EmptySubscription, Object, Schema};
+use async_graphql::{Context, EmptyMutation, EmptySubscription, Object, Schema};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use quick_xml::{events::Event, Reader};
 use serde::Serialize;
@@ -58,7 +58,7 @@ impl Telemetry {
         &self,
         protocol: &str,
         success: bool,
-        started: Instant,
+        duration: Duration,
         request_bytes: u64,
         response_bytes: u64,
     ) {
@@ -68,7 +68,7 @@ impl Telemetry {
         if !success {
             entry.failures += 1;
         }
-        entry.total_duration_ns += started.elapsed().as_nanos() as u64;
+        entry.total_duration_ns += duration.as_nanos() as u64;
         entry.request_bytes += request_bytes;
         entry.response_bytes += response_bytes;
     }
@@ -109,8 +109,12 @@ struct QueryRoot;
 
 #[Object]
 impl QueryRoot {
-    async fn hello(&self) -> &str {
-        "hello"
+    async fn hello(&self, context: &Context<'_>) -> String {
+        let started = context
+            .data_opt::<Instant>()
+            .copied()
+            .unwrap_or_else(Instant::now);
+        protocol_response("GraphQL", started.elapsed())
     }
 }
 
@@ -133,14 +137,23 @@ pub fn app_with_telemetry(telemetry: Telemetry) -> Router {
 
 async fn health_handler(State(state): State<AppState>) -> &'static str {
     let started = Instant::now();
-    state.telemetry.record("health", true, started, 0, 2);
+    let duration = started.elapsed();
+    state.telemetry.record("health", true, duration, 0, 2);
     "ok"
 }
 
-async fn rest_hello_handler(State(state): State<AppState>) -> &'static str {
+async fn rest_hello_handler(State(state): State<AppState>) -> String {
     let started = Instant::now();
-    state.telemetry.record("rest", true, started, 0, 5);
-    "hello"
+    let duration = started.elapsed();
+    let response = protocol_response("REST", duration);
+    state.telemetry.record(
+        "rest",
+        true,
+        duration,
+        0,
+        response.len() as u64,
+    );
+    response
 }
 
 async fn graphql_handler(
@@ -148,14 +161,14 @@ async fn graphql_handler(
     request: GraphQLRequest,
 ) -> GraphQLResponse {
     let started = Instant::now();
-    let request = request.into_inner();
+    let request = request.into_inner().data(started);
     let request_bytes = request.query.len() as u64;
     let response = state.schema.execute(request).await;
     let response_bytes = serde_json::to_vec(&response).map_or(0, |body| body.len() as u64);
     state.telemetry.record(
         "graphql",
         response.errors.is_empty(),
-        started,
+        started.elapsed(),
         request_bytes,
         response_bytes,
     );
@@ -168,7 +181,13 @@ async fn handle_soap_request(
 ) -> impl IntoResponse {
     let started = Instant::now();
     if !is_soap_ping_request(&body) {
-        state.telemetry.record("soap", false, started, body.len() as u64, 0);
+        state.telemetry.record(
+            "soap",
+            false,
+            started.elapsed(),
+            body.len() as u64,
+            0,
+        );
         return (
             StatusCode::BAD_REQUEST,
             [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
@@ -177,11 +196,12 @@ async fn handle_soap_request(
             .into_response();
     }
 
-    let response_body = soap_acknowledgement();
+    let duration = started.elapsed();
+    let response_body = soap_acknowledgement(protocol_response("SOAP", duration));
     state.telemetry.record(
         "soap",
         true,
-        started,
+        duration,
         body.len() as u64,
         response_body.len() as u64,
     );
@@ -232,16 +252,21 @@ fn local_name(name: &[u8]) -> &[u8] {
     name.rsplit(|byte| *byte == b':').next().unwrap_or(name)
 }
 
-fn soap_acknowledgement() -> String {
-    r#"<?xml version="1.0" encoding="UTF-8"?>
+fn soap_acknowledgement(message: String) -> String {
+        format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
     <PingResponse>
-      <Message>SOAP request received</Message>
+            <Message>{message}</Message>
     </PingResponse>
   </soap:Body>
 </soap:Envelope>"#
-        .to_string()
+        )
+}
+
+fn protocol_response(protocol: &str, duration: Duration) -> String {
+    format!("{protocol} in {} us", duration.as_micros())
 }
 
 pub async fn run(addr: SocketAddr) {
@@ -284,14 +309,17 @@ impl hello::hello_server::Hello for GrpcHello {
     ) -> Result<Response<hello::HelloReply>, Status> {
         let started = Instant::now();
         let name = request.into_inner().name;
-        let message = format!("Hello, {name}!");
+        let duration = started.elapsed();
+        let response_message = protocol_response("gRPC", duration);
         self.telemetry.record(
             "grpc",
             true,
-            started,
+            duration,
             name.len() as u64,
-            message.len() as u64,
+            response_message.len() as u64,
         );
-        Ok(Response::new(hello::HelloReply { message }))
+        Ok(Response::new(hello::HelloReply {
+            message: response_message,
+        }))
     }
 }

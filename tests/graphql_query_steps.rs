@@ -48,16 +48,19 @@ async fn send_graphql_query(world: &mut GraphqlWorld, field: String) {
     );
 }
 
-#[then(expr = "the GraphQL response data should contain {string}")]
-async fn graphql_response_should_contain(world: &mut GraphqlWorld, expected: String) {
+#[then(expr = "the GraphQL response data should identify {string}")]
+async fn graphql_response_should_identify(world: &mut GraphqlWorld, expected: String) {
     let actual = world
         .response_body
         .as_ref()
         .and_then(|body| body.get("data"))
-        .and_then(|data| data.get(&expected))
+        .and_then(|data| data.get("hello"))
         .and_then(Value::as_str);
 
-    assert_eq!(actual, Some(expected.as_str()));
+    assert!(
+        actual.is_some_and(|value| value.starts_with(&format!("{expected} in "))),
+        "unexpected GraphQL response value: {actual:?}"
+    );
 }
 
 #[tokio::main]

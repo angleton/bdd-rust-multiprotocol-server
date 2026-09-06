@@ -34,9 +34,13 @@ async fn send_rest_get_request(world: &mut RestGetWorld, path: String) {
     world.response_body = Some(body);
 }
 
-#[then(expr = "the response body should be {string}")]
-async fn response_body_should_be(world: &mut RestGetWorld, expected: String) {
-    assert_eq!(world.response_body.as_deref(), Some(expected.as_str()));
+#[then(expr = "the response body should start with {string}")]
+async fn response_body_should_start_with(world: &mut RestGetWorld, expected: String) {
+    let actual = world
+        .response_body
+        .as_ref()
+        .expect("No response body was captured");
+    assert!(actual.starts_with(&expected));
 }
 
 #[tokio::main]
