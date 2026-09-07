@@ -12,6 +12,26 @@ use tokio::{
 struct FixWorld {
     server_handle: Option<JoinHandle<()>>,
     response: Option<String>,
+    connection_closed: bool,
+}
+
+#[when("I connect to FIX without sending a heartbeat")]
+async fn connect_without_heartbeat(world: &mut FixWorld) {
+    let address = fix_addr("127.0.0.1:8080".parse().unwrap());
+    let mut stream = TcpStream::connect(address)
+        .await
+        .expect("Failed to connect to the FIX acceptor");
+    let mut response = Vec::new();
+    tokio::time::timeout(
+        Duration::from_secs(4),
+        stream.read_to_end(&mut response),
+    )
+    .await
+    .expect("FIX acceptor did not close the silent session in time")
+    .expect("Failed to read FIX timeout response");
+
+    world.connection_closed = true;
+    world.response = Some(String::from_utf8_lossy(&response).into_owned());
 }
 
 #[given("the server is running")]
@@ -49,6 +69,11 @@ async fn send_fix_heartbeat(world: &mut FixWorld) {
 async fn fix_response_should_contain_message_type(world: &mut FixWorld, message_type: String) {
     let response = world.response.as_ref().expect("No FIX response was captured");
     assert!(response.contains(&format!("35={message_type}")));
+}
+
+#[then("the FIX connection should be closed")]
+async fn fix_connection_should_be_closed(world: &mut FixWorld) {
+    assert!(world.connection_closed);
 }
 
 #[tokio::test]

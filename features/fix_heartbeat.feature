@@ -4,3 +4,9 @@ Feature: FIX heartbeat acceptor
     Given the server is running
     When I send a FIX heartbeat message
     Then the FIX response should contain message type "0"
+
+  Scenario: Detect a missing FIX heartbeat
+    Given the server is running
+    When I connect to FIX without sending a heartbeat
+    Then the FIX response should contain message type "1"
+    And the FIX connection should be closed

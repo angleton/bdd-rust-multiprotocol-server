@@ -2,9 +2,12 @@ use std::{io, net::SocketAddr};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
+    time::{timeout, Duration},
 };
 
 use crate::{activity, telemetry::Telemetry};
+
+pub(crate) const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
 
 pub(crate) async fn serve(addr: SocketAddr, telemetry: Telemetry) {
     let listener = TcpListener::bind(addr)
@@ -30,7 +33,42 @@ async fn handle_connection(stream: TcpStream, telemetry: Telemetry) -> io::Resul
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
     let mut request = Vec::new();
-    reader.read_until(b'\n', &mut request).await?;
+    let read_result = timeout(
+        HEARTBEAT_INTERVAL,
+        reader.read_until(b'\n', &mut request),
+    )
+    .await;
+
+    if read_result.is_err() {
+        activity::request("fix", "heartbeat timeout");
+        let test_request = test_request_message();
+        writer.write_all(&test_request).await?;
+        telemetry.record(
+            "fix",
+            false,
+            HEARTBEAT_INTERVAL,
+            0,
+            test_request.len() as u64,
+        );
+        activity::response(
+            "fix",
+            "Test Request",
+            HEARTBEAT_INTERVAL,
+            test_request.len(),
+        );
+
+        let mut follow_up = Vec::new();
+        if timeout(
+            HEARTBEAT_INTERVAL,
+            reader.read_until(b'\n', &mut follow_up),
+        )
+        .await
+        .is_err()
+        {
+            activity::request("fix", "heartbeat response timeout");
+            return Ok(());
+        }
+    }
 
     let started = std::time::Instant::now();
     activity::request("fix", format!("message_bytes={}", request.len()));
@@ -67,6 +105,10 @@ fn is_heartbeat(message: &[u8]) -> bool {
 
 fn heartbeat_message() -> Vec<u8> {
     build_message(b"35=0\x01")
+}
+
+fn test_request_message() -> Vec<u8> {
+    build_message(b"35=1\x01112=heartbeat-timeout\x01")
 }
 
 fn reject_message() -> Vec<u8> {
