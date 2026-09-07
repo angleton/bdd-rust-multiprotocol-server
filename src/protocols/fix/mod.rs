@@ -4,7 +4,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
-use crate::telemetry::Telemetry;
+use crate::{activity, telemetry::Telemetry};
 
 pub(crate) async fn serve(addr: SocketAddr, telemetry: Telemetry) {
     let listener = TcpListener::bind(addr)
@@ -33,6 +33,7 @@ async fn handle_connection(stream: TcpStream, telemetry: Telemetry) -> io::Resul
     reader.read_until(b'\n', &mut request).await?;
 
     let started = std::time::Instant::now();
+    activity::request("fix", format!("message_bytes={}", request.len()));
     let response = if is_heartbeat(&request) {
         heartbeat_message()
     } else {
@@ -41,12 +42,19 @@ async fn handle_connection(stream: TcpStream, telemetry: Telemetry) -> io::Resul
     let success = is_heartbeat(&request);
 
     writer.write_all(&response).await?;
+    let duration = started.elapsed();
     telemetry.record(
         "fix",
         success,
-        started.elapsed(),
+        duration,
         request.len() as u64,
         response.len() as u64,
+    );
+    activity::response(
+        "fix",
+        if success { "Heartbeat" } else { "Reject" },
+        duration,
+        response.len(),
     );
     Ok(())
 }

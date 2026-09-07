@@ -15,6 +15,19 @@ cargo run
 
 The HTTP server listens on `127.0.0.1:8080`. The gRPC server listens on `127.0.0.1:8081`, and the FIX acceptor listens on `127.0.0.1:8082`.
 
+## Console activity
+
+The server configures `tracing_subscriber` at startup and writes a timestamped `Request` and `Response` event for each protocol activity. The events include the protocol name, request or response summary, byte counts, and response duration in microseconds. Request payload contents are summarized by size rather than printed in full.
+
+Example output from a REST request:
+
+```text
+2026-09-07T03:02:17.791259Z  INFO Request protocol="rest" request=GET /hello payload_bytes=13
+2026-09-07T03:02:17.791471Z  INFO Response protocol="rest" response=REST message duration_us=283 response_bytes=12
+```
+
+HTTP health, REST, GraphQL, SOAP, and telemetry requests are logged by their handlers. gRPC RPCs and FIX TCP messages are logged by their protocol services. Start the application with `cargo run` and keep that terminal visible while sending requests from another terminal to watch the activity stream.
+
 ## Protocols
 
 The project compares several kinds of application-layer technology. They are often called protocols collectively, but their precise classifications differ:

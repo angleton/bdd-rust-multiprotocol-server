@@ -1,6 +1,7 @@
 use axum::{extract::State, routing::get, Json, Router};
 use std::net::SocketAddr;
 
+mod activity;
 mod protocols;
 mod telemetry;
 
@@ -37,13 +38,20 @@ pub fn app_with_telemetry(telemetry: Telemetry) -> Router {
 
 async fn health_handler(State(state): State<AppState>) -> &'static str {
     let started = std::time::Instant::now();
+    activity::request("health", "GET /health");
     let duration = started.elapsed();
     state.telemetry.record("health", true, duration, 0, 2);
+    activity::response("health", "ok", duration, 2);
     "ok"
 }
 
 async fn telemetry_handler(State(state): State<AppState>) -> Json<TelemetrySnapshot> {
-    Json(state.telemetry.snapshot())
+    activity::request("telemetry", "GET /telemetry");
+    let started = std::time::Instant::now();
+    let snapshot = state.telemetry.snapshot();
+    let response_bytes = serde_json::to_vec(&snapshot).map_or(0, |body| body.len());
+    activity::response("telemetry", "telemetry snapshot", started.elapsed(), response_bytes);
+    Json(snapshot)
 }
 
 pub async fn run(addr: SocketAddr) {

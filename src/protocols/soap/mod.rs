@@ -6,14 +6,17 @@ use axum::{
 };
 use quick_xml::{events::Event, Reader};
 
-use crate::{protocols::protocol_response, AppState};
+use crate::{activity, protocols::protocol_response, AppState};
 
 pub(crate) async fn handler(State(state): State<AppState>, body: Bytes) -> impl IntoResponse {
     let started = std::time::Instant::now();
+    activity::request("soap", format!("POST /soap request_bytes={}", body.len()));
     let Some(_payload) = ping_payload(&body) else {
+        let duration = started.elapsed();
         state
             .telemetry
-            .record("soap", false, started.elapsed(), body.len() as u64, 0);
+            .record("soap", false, duration, body.len() as u64, 0);
+        activity::response("soap", "invalid SOAP request", duration, 0);
         return (
             StatusCode::BAD_REQUEST,
             [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
@@ -23,13 +26,15 @@ pub(crate) async fn handler(State(state): State<AppState>, body: Bytes) -> impl 
     };
 
     let response_body = acknowledgement(protocol_response("SOAP"));
+    let duration = started.elapsed();
     state.telemetry.record(
         "soap",
         true,
-        started.elapsed(),
+        duration,
         body.len() as u64,
         response_body.len() as u64,
     );
+    activity::response("soap", "SOAP response", duration, response_body.len());
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "text/xml; charset=utf-8")],
