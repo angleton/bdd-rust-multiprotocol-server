@@ -10,7 +10,10 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{client::IntoClientRequest, Message},
+};
 
 const HTTP_BASE: &str = "http://127.0.0.1:18080";
 const GRPC_ENDPOINT: &str = "http://127.0.0.1:18081";
@@ -20,6 +23,8 @@ const WARMUP_REQUESTS: usize = 20;
 const DEFAULT_ITERATIONS: usize = 1_000;
 const DEFAULT_RUNS: usize = 20;
 const DEFAULT_PAYLOAD_BYTES: usize = 4_096;
+const DEFAULT_CPU_PERCENT: u8 = 0;
+const DEFAULT_DURATION_MS: u64 = 0;
 
 #[derive(Default)]
 struct Stats {
@@ -109,6 +114,14 @@ async fn main() {
         .nth(3)
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(DEFAULT_PAYLOAD_BYTES);
+    let cpu_percent = env::args()
+        .nth(4)
+        .and_then(|value| value.parse::<u8>().ok())
+        .unwrap_or(DEFAULT_CPU_PERCENT);
+    let duration_ms = env::args()
+        .nth(5)
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_DURATION_MS);
     let payload = generate_payload(payload_size);
     let soap_request = soap_request(&payload);
     let server_address = "127.0.0.1:18080".parse().unwrap();
@@ -136,12 +149,21 @@ async fn main() {
 
         for protocol in order {
             let stats = match protocol {
-                "REST" => benchmark_rest(&client, iterations, &payload).await,
-                "GraphQL" => benchmark_graphql(&client, iterations, &payload).await,
-                "SOAP" => benchmark_soap(&client, iterations, &soap_request).await,
-                "gRPC" => benchmark_grpc(iterations, &payload).await,
-                "FIX" => benchmark_fix(iterations).await,
-                "WebSocket" => benchmark_websocket(iterations, &payload).await,
+                "REST" => {
+                    benchmark_rest(&client, iterations, &payload, cpu_percent, duration_ms).await
+                }
+                "GraphQL" => {
+                    benchmark_graphql(&client, iterations, &payload, cpu_percent, duration_ms).await
+                }
+                "SOAP" => {
+                    benchmark_soap(&client, iterations, &soap_request, cpu_percent, duration_ms)
+                        .await
+                }
+                "gRPC" => benchmark_grpc(iterations, &payload, cpu_percent, duration_ms).await,
+                "FIX" => benchmark_fix(iterations, cpu_percent, duration_ms).await,
+                "WebSocket" => {
+                    benchmark_websocket(iterations, &payload, cpu_percent, duration_ms).await
+                }
                 _ => unreachable!(),
             };
             results
@@ -153,7 +175,7 @@ async fn main() {
         }
     }
 
-    println!("Protocol benchmark ({runs} runs x {iterations} requests each; payload {payload_size} bytes; {WARMUP_REQUESTS} warm-ups excluded)");
+    println!("Protocol benchmark ({runs} runs x {iterations} requests each; payload {payload_size} bytes; workload {cpu_percent}% for {duration_ms} ms; {WARMUP_REQUESTS} warm-ups excluded)");
     println!("protocol | samples | average_us | median_us | p95_us | 95%_ci_us       | stddev_us | failures");
     println!("---------|---------|------------|-----------|--------|------------------|-----------|---------");
     for (protocol, stats) in &results {
@@ -220,12 +242,20 @@ async fn wait_for_http() {
     panic!("server did not become ready");
 }
 
-async fn benchmark_rest(client: &Client, iterations: usize, payload: &str) -> Stats {
+async fn benchmark_rest(
+    client: &Client,
+    iterations: usize,
+    payload: &str,
+    cpu_percent: u8,
+    duration_ms: u64,
+) -> Stats {
     let mut stats = Stats::default();
     for _ in 0..WARMUP_REQUESTS {
         let _ = client
             .get(format!("{HTTP_BASE}/hello"))
             .query(&[("payload", payload)])
+            .header("x-workload-cpu-percent", cpu_percent.to_string())
+            .header("x-workload-duration-ms", duration_ms.to_string())
             .send()
             .await;
     }
@@ -234,6 +264,8 @@ async fn benchmark_rest(client: &Client, iterations: usize, payload: &str) -> St
         let success = client
             .get(format!("{HTTP_BASE}/hello"))
             .query(&[("payload", payload)])
+            .header("x-workload-cpu-percent", cpu_percent.to_string())
+            .header("x-workload-duration-ms", duration_ms.to_string())
             .send()
             .await
             .and_then(|response| response.error_for_status())
@@ -243,7 +275,13 @@ async fn benchmark_rest(client: &Client, iterations: usize, payload: &str) -> St
     stats
 }
 
-async fn benchmark_graphql(client: &Client, iterations: usize, payload: &str) -> Stats {
+async fn benchmark_graphql(
+    client: &Client,
+    iterations: usize,
+    payload: &str,
+    cpu_percent: u8,
+    duration_ms: u64,
+) -> Stats {
     let mut stats = Stats::default();
     let request = serde_json::json!({
         "query": "query($payload: String!) { hello(payload: $payload) }",
@@ -253,6 +291,8 @@ async fn benchmark_graphql(client: &Client, iterations: usize, payload: &str) ->
         let _ = client
             .post(format!("{HTTP_BASE}/graphql"))
             .json(&request)
+            .header("x-workload-cpu-percent", cpu_percent.to_string())
+            .header("x-workload-duration-ms", duration_ms.to_string())
             .send()
             .await;
     }
@@ -261,6 +301,8 @@ async fn benchmark_graphql(client: &Client, iterations: usize, payload: &str) ->
         let success = client
             .post(format!("{HTTP_BASE}/graphql"))
             .json(&request)
+            .header("x-workload-cpu-percent", cpu_percent.to_string())
+            .header("x-workload-duration-ms", duration_ms.to_string())
             .send()
             .await
             .and_then(|response| response.error_for_status())
@@ -270,12 +312,20 @@ async fn benchmark_graphql(client: &Client, iterations: usize, payload: &str) ->
     stats
 }
 
-async fn benchmark_soap(client: &Client, iterations: usize, request: &str) -> Stats {
+async fn benchmark_soap(
+    client: &Client,
+    iterations: usize,
+    request: &str,
+    cpu_percent: u8,
+    duration_ms: u64,
+) -> Stats {
     let mut stats = Stats::default();
     for _ in 0..WARMUP_REQUESTS {
         let _ = client
             .post(format!("{HTTP_BASE}/soap"))
             .header("content-type", "text/xml")
+            .header("x-workload-cpu-percent", cpu_percent.to_string())
+            .header("x-workload-duration-ms", duration_ms.to_string())
             .body(request.to_owned())
             .send()
             .await;
@@ -285,6 +335,8 @@ async fn benchmark_soap(client: &Client, iterations: usize, request: &str) -> St
         let success = client
             .post(format!("{HTTP_BASE}/soap"))
             .header("content-type", "text/xml")
+            .header("x-workload-cpu-percent", cpu_percent.to_string())
+            .header("x-workload-duration-ms", duration_ms.to_string())
             .body(request.to_owned())
             .send()
             .await
@@ -295,26 +347,35 @@ async fn benchmark_soap(client: &Client, iterations: usize, request: &str) -> St
     stats
 }
 
-async fn benchmark_grpc(iterations: usize, payload: &str) -> Stats {
+async fn benchmark_grpc(
+    iterations: usize,
+    payload: &str,
+    cpu_percent: u8,
+    duration_ms: u64,
+) -> Stats {
     let mut client = HelloClient::connect(GRPC_ENDPOINT)
         .await
         .expect("failed to connect to gRPC server");
     for _ in 0..WARMUP_REQUESTS {
         let _ = client
-            .say_hello(HelloRequest {
-                name: "warmup".to_string(),
-                payload: payload.to_string(),
-            })
+            .say_hello(workload_grpc_request(
+                "warmup",
+                payload,
+                cpu_percent,
+                duration_ms,
+            ))
             .await;
     }
     let mut stats = Stats::default();
     for _ in 0..iterations {
         let started = Instant::now();
         let success = client
-            .say_hello(HelloRequest {
-                name: "benchmark".to_string(),
-                payload: payload.to_string(),
-            })
+            .say_hello(workload_grpc_request(
+                "benchmark",
+                payload,
+                cpu_percent,
+                duration_ms,
+            ))
             .await
             .is_ok();
         stats.record(started, success);
@@ -322,18 +383,44 @@ async fn benchmark_grpc(iterations: usize, payload: &str) -> Stats {
     stats
 }
 
-async fn benchmark_fix(iterations: usize) -> Stats {
-    let heartbeat = b"8=FIX.4.4\x019=5\x0135=0\x0110=000\x01\n";
+fn workload_grpc_request(
+    name: &str,
+    payload: &str,
+    cpu_percent: u8,
+    duration_ms: u64,
+) -> tonic::Request<HelloRequest> {
+    let mut request = tonic::Request::new(HelloRequest {
+        name: name.to_string(),
+        payload: payload.to_string(),
+    });
+    request.metadata_mut().insert(
+        "x-workload-cpu-percent",
+        cpu_percent.to_string().parse().unwrap(),
+    );
+    request.metadata_mut().insert(
+        "x-workload-duration-ms",
+        duration_ms.to_string().parse().unwrap(),
+    );
+    request
+}
+
+async fn benchmark_fix(iterations: usize, cpu_percent: u8, duration_ms: u64) -> Stats {
+    let heartbeat = fix_heartbeat(cpu_percent, duration_ms);
     let mut stats = Stats::default();
     for _ in 0..WARMUP_REQUESTS {
-        let _ = fix_request(heartbeat).await;
+        let _ = fix_request(&heartbeat).await;
     }
     for _ in 0..iterations {
         let started = Instant::now();
-        let success = fix_request(heartbeat).await;
+        let success = fix_request(&heartbeat).await;
         stats.record(started, success);
     }
     stats
+}
+
+fn fix_heartbeat(cpu_percent: u8, duration_ms: u64) -> Vec<u8> {
+    format!("8=FIX.4.4\x019=17\x0135=0\x019000={cpu_percent}\x019001={duration_ms}\x0110=000\x01\n")
+        .into_bytes()
 }
 
 async fn fix_request(request: &[u8]) -> bool {
@@ -348,12 +435,30 @@ async fn fix_request(request: &[u8]) -> bool {
         && response.windows(4).any(|field| field == b"35=0")
 }
 
-async fn benchmark_websocket(iterations: usize, payload: &str) -> Stats {
-    let Ok((mut socket, _)) = connect_async(WEBSOCKET_ENDPOINT).await else {
-        return Stats {
-            failures: WARMUP_REQUESTS + iterations,
-            ..Stats::default()
-        };
+async fn benchmark_websocket(
+    iterations: usize,
+    payload: &str,
+    cpu_percent: u8,
+    duration_ms: u64,
+) -> Stats {
+    let mut request = WEBSOCKET_ENDPOINT.into_client_request().unwrap();
+    request.headers_mut().insert(
+        "x-workload-cpu-percent",
+        cpu_percent.to_string().parse().unwrap(),
+    );
+    request.headers_mut().insert(
+        "x-workload-duration-ms",
+        duration_ms.to_string().parse().unwrap(),
+    );
+    let (mut socket, _) = match connect_async(request).await {
+        Ok(connection) => connection,
+        Err(error) => {
+            eprintln!("WebSocket benchmark connection failed: {error}");
+            return Stats {
+                failures: WARMUP_REQUESTS + iterations,
+                ..Stats::default()
+            };
+        }
     };
     for _ in 0..WARMUP_REQUESTS {
         let _ = websocket_request(&mut socket, payload).await;
