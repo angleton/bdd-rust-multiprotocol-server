@@ -26,6 +26,7 @@ The project compares several kinds of application-layer technology. They are oft
 | SOAP | XML messaging protocol |
 | gRPC | RPC framework and protocol stack |
 | FIX | Financial messaging/application protocol |
+| WebSocket | Full-duplex communication protocol over a persistent HTTP-upgraded connection |
 
 In short, this is a multiprotocol application server supporting REST, GraphQL, SOAP, gRPC, and FIX. Each technology performs a hello request while preserving its own wire model:
 
@@ -36,6 +37,7 @@ In short, this is a multiprotocol application server supporting REST, GraphQL, S
 | SOAP | `POST /soap` with a SOAP XML `Envelope` and `PingRequest` body | XML `Envelope` containing `SOAP message` |
 | gRPC | `Hello.SayHello` with `payload` on port `8081` | `HelloReply.message = "gRPC message"` |
 | FIX | TCP message with `35=0` on port `8082` | FIX 4.4 `Heartbeat` with `35=0` |
+| WebSocket | Text message to `ws://127.0.0.1:8080/ws` | Text message `WebSocket message` |
 
 The SOAP handler deliberately models the older XML contract: it parses the envelope, body, and operation instead of accepting arbitrary text. Invalid SOAP-shaped input receives HTTP `400`; valid requests receive `text/xml`.
 
