@@ -49,10 +49,16 @@ async fn telemetry_handler(State(state): State<AppState>) -> Json<TelemetrySnaps
 pub async fn run(addr: SocketAddr) {
     let telemetry = Telemetry::default();
     let grpc_addr = grpc_addr(addr);
+    let fix_addr = fix_addr(addr);
     let grpc_telemetry = telemetry.clone();
+    let fix_telemetry = telemetry.clone();
 
     tokio::spawn(async move {
         protocols::grpc::serve(grpc_addr, grpc_telemetry).await;
+    });
+
+    tokio::spawn(async move {
+        protocols::fix::serve(fix_addr, fix_telemetry).await;
     });
 
     let listener = tokio::net::TcpListener::bind(addr)
@@ -66,4 +72,8 @@ pub async fn run(addr: SocketAddr) {
 
 pub fn grpc_addr(http_addr: SocketAddr) -> SocketAddr {
     SocketAddr::new(http_addr.ip(), http_addr.port() + 1)
+}
+
+pub fn fix_addr(http_addr: SocketAddr) -> SocketAddr {
+    SocketAddr::new(http_addr.ip(), http_addr.port() + 2)
 }

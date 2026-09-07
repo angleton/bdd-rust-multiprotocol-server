@@ -13,7 +13,7 @@ A Rust reference server that exposes the same small `hello` operation through RE
 cargo run
 ```
 
-The HTTP server listens on `127.0.0.1:8080`. The gRPC server listens on `127.0.0.1:8081`, one port above the HTTP address.
+The HTTP server listens on `127.0.0.1:8080`. The gRPC server listens on `127.0.0.1:8081`, and the FIX acceptor listens on `127.0.0.1:8082`.
 
 ## Protocols
 
@@ -25,6 +25,7 @@ Every protocol performs a hello request, but each keeps its era's wire model:
 | GraphQL | `POST /graphql` with a `payload` variable | JSON with `data.hello = "GraphQL message"` |
 | SOAP | `POST /soap` with a SOAP XML `Envelope` and `PingRequest` body | XML `Envelope` containing `SOAP message` |
 | gRPC | `Hello.SayHello` with `payload` on port `8081` | `HelloReply.message = "gRPC message"` |
+| FIX | TCP message with `35=0` on port `8082` | FIX 4.4 `Heartbeat` with `35=0` |
 
 The SOAP handler deliberately models the older XML contract: it parses the envelope, body, and operation instead of accepting arbitrary text. Invalid SOAP-shaped input receives HTTP `400`; valid requests receive `text/xml`.
 
@@ -42,7 +43,7 @@ curl -X POST http://127.0.0.1:8080/soap \
 curl http://127.0.0.1:8080/telemetry
 ```
 
-The gRPC contract is in [proto/hello.proto](proto/hello.proto). The generated client is used by the BDD test, so `cargo test` verifies the RPC without requiring a separate client tool.
+The gRPC contract is in [proto/hello.proto](proto/hello.proto). The generated client is used by the BDD test, so `cargo test` verifies the RPC without requiring a separate client tool. FIX uses the SOH byte (`0x01`) between fields and a newline to delimit this initial example's messages.
 
 ## First PowerShell experiment
 
@@ -89,8 +90,17 @@ The feature files describe the expected behavior:
 - [features/graphql_query.feature](features/graphql_query.feature) checks GraphQL `data.hello`.
 - [features/soap_acknowledgement.feature](features/soap_acknowledgement.feature) checks SOAP XML content type and acknowledgement.
 - [features/grpc_hello.feature](features/grpc_hello.feature) checks the generated gRPC `SayHello` contract.
+- [features/fix_heartbeat.feature](features/fix_heartbeat.feature) checks the FIX heartbeat acceptor.
 
 Each scenario starts the server, sends a real request, and asserts the response. The gRPC scenario also proves that the generated protobuf client and server agree on the service definition.
+
+The BDD runners use standard `#[tokio::test]` functions and the normal Cargo test harness, so Rust Analyzer can discover them in VS Code's Testing view. The discovered test names are `health_feature`, `rest_get_feature`, `graphql_query_feature`, `soap_acknowledgement_feature`, `grpc_hello_feature`, and `fix_heartbeat_feature`. Run an individual discovered test with the matching Cargo target, for example:
+
+```bash
+cargo test --test fix_heartbeat_steps
+```
+
+Run the full suite with `cargo test --tests`. Do not forward Rust harness flags such as `--test-threads=1` to these targets because the Cucumber runner parses forwarded command-line arguments itself.
 
 ## Debugging
 
@@ -111,7 +121,7 @@ cargo test --test soap_acknowledgement_steps
 cargo test --test grpc_hello_steps
 ```
 
-For a live server investigation, start `cargo run` in one terminal and use the manual requests above from another. HTTP, GraphQL, and SOAP use port `8080`; gRPC uses port `8081`. `/telemetry` reports request counts, failures, average handler duration in microseconds, and byte totals. Successful protocol responses identify the protocol; timing remains available through `/telemetry` and the benchmark output.
+For a live server investigation, start `cargo run` in one terminal and use the manual requests above from another. HTTP, GraphQL, and SOAP use port `8080`; gRPC uses port `8081`; FIX uses port `8082`. `/telemetry` reports request counts, failures, average handler duration in microseconds, and byte totals. Successful protocol responses identify the protocol; timing remains available through `/telemetry` and the benchmark output.
 
 For Rust panic details, enable a backtrace before running the failing command. In PowerShell:
 
@@ -183,6 +193,7 @@ The confidence interval describes uncertainty in the measured mean; it does not 
 - `src/protocols/graphql/mod.rs`: GraphQL schema and handler.
 - `src/protocols/soap/mod.rs`: SOAP envelope parser and acknowledgement handler.
 - `src/protocols/grpc/mod.rs`: gRPC server and `SayHello` implementation.
+- `src/protocols/fix/mod.rs`: FIX TCP acceptor, message framing, heartbeat, and reject response.
 - `src/telemetry.rs`: shared protocol telemetry and snapshots.
 - `src/main.rs`: production server entry point.
 - `proto/hello.proto`: gRPC service contract.

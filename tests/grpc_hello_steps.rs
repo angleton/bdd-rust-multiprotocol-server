@@ -42,8 +42,8 @@ async fn grpc_response_should_be(world: &mut GrpcWorld, expected: String) {
     assert_eq!(world.response_message.as_deref(), Some(expected.as_str()));
 }
 
-#[tokio::main]
-async fn main() {
+#[tokio::test]
+async fn grpc_hello_feature() {
     GrpcWorld::cucumber()
         .run("./features/grpc_hello.feature")
         .await;

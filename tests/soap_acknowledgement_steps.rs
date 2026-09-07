@@ -89,8 +89,8 @@ async fn soap_response_body_should_contain(world: &mut SoapWorld, expected: Stri
     assert!(actual.contains(&expected));
 }
 
-#[tokio::main]
-async fn main() {
+#[tokio::test]
+async fn soap_acknowledgement_feature() {
     SoapWorld::cucumber()
         .run("./features/soap_acknowledgement.feature")
         .await;

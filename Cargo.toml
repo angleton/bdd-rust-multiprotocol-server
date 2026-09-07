@@ -39,22 +39,20 @@ tokio = { version = "1", features = ["full"] }
 
 [[test]]
 name = "health_steps"
-harness = false
 
 [[test]]
 name = "rest_get_steps"
-harness = false
 
 [[test]]
 name = "soap_acknowledgement_steps"
-harness = false
 
 [[test]]
 name = "graphql_query_steps"
-harness = false
 
 [[test]]
 name = "grpc_hello_steps"
-harness = false
+
+[[test]]
+name = "fix_heartbeat_steps"
 
 
