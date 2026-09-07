@@ -21,22 +21,22 @@ The project compares several kinds of application-layer technology. They are oft
 
 | Technology | Precise classification |
 | --- | --- |
-| REST | Architectural style for HTTP APIs |
-| GraphQL | Query language and API execution/runtime |
-| SOAP | XML messaging protocol |
-| gRPC | RPC framework and protocol stack |
 | FIX | Financial messaging/application protocol |
+| gRPC | RPC framework and protocol stack |
+| GraphQL | Query language and API execution/runtime |
+| REST | Architectural style for HTTP APIs |
+| SOAP | XML messaging protocol |
 | WebSocket | Full-duplex communication protocol over a persistent HTTP-upgraded connection |
 
 In short, this is a multiprotocol application server supporting REST, GraphQL, SOAP, gRPC, FIX, and WebSocket. Each technology performs a representative request while preserving its own wire model:
 
 | Protocol | Request | Success response |
 | --- | --- | --- |
-| REST | `GET /hello?payload=...` | HTTP `200` with `REST message` |
-| GraphQL | `POST /graphql` with a `payload` variable | JSON with `data.hello = "GraphQL message"` |
-| SOAP | `POST /soap` with a SOAP XML `Envelope` and `PingRequest` body | XML `Envelope` containing `SOAP message` |
-| gRPC | `Hello.SayHello` with `payload` on port `8081` | `HelloReply.message = "gRPC message"` |
 | FIX | TCP message with `35=0` on port `8082` | FIX 4.4 `Heartbeat` with `35=0` |
+| gRPC | `Hello.SayHello` with `payload` on port `8081` | `HelloReply.message = "gRPC message"` |
+| GraphQL | `POST /graphql` with a `payload` variable | JSON with `data.hello = "GraphQL message"` |
+| REST | `GET /hello?payload=...` | HTTP `200` with `REST message` |
+| SOAP | `POST /soap` with a SOAP XML `Envelope` and `PingRequest` body | XML `Envelope` containing `SOAP message` |
 | WebSocket | Text message to `ws://127.0.0.1:8080/ws` | Text message `WebSocket message` |
 
 The SOAP handler deliberately models the older XML contract: it parses the envelope, body, and operation instead of accepting arbitrary text. Invalid SOAP-shaped input receives HTTP `400`; valid requests receive `text/xml`.
@@ -222,12 +222,12 @@ The benchmark table labels are `protocol`, `samples`, `average_us` (mean latency
 ```text
 protocol | samples | average_us | median_us | p95_us | 95%_ci_us       | stddev_us | failures
 ---------|---------|------------|-----------|--------|------------------|-----------|---------
-REST     |   20000 |      163.9 |       158 |    228 |  156.1 -  171.8 |      43.2 | 0
-GraphQL  |   20000 |      164.9 |       161 |    224 |  157.6 -  172.1 |      38.3 | 0
-SOAP     |   20000 |      127.2 |       126 |    174 |  121.2 -  133.1 |      34.4 | 0
-gRPC     |   20000 |      186.3 |       177 |    255 |  179.1 -  193.4 |      41.5 | 0
-FIX      |   20000 |      427.1 |       371 |    537 |  416.1 -  438.0 |     627.7 | 0
-WebSocket |   20000 |       68.5 |        62 |    105 |   66.1 -   71.0 |      22.7 | 0
+FIX      |   20000 |      404.7 |       332 |    485 |  384.7 -  424.6 |     945.0 | 0
+gRPC     |   20000 |      157.0 |       150 |    207 |  154.9 -  159.2 |      33.7 | 0
+GraphQL  |   20000 |      132.8 |       125 |    184 |  130.5 -  135.1 |      32.2 | 0
+REST     |   20000 |      121.7 |       113 |    170 |  119.5 -  123.9 |      31.3 | 0
+SOAP     |   20000 |       98.0 |        93 |    137 |   96.1 -   99.9 |      27.9 | 0
+WebSocket |   20000 |       56.8 |        50 |     90 |   55.6 -   58.0 |      25.4 | 0
 ```
 
 These values were produced by the default release benchmark on September 7, 2026: 20 runs, 1,000 measured requests per protocol per run, a 4,096-byte generated payload, 20 warm-ups per protocol per run, and a fixed randomization seed. The confidence interval describes uncertainty in the measured mean; it does not make the result a universal ranking of the technologies. The server telemetry snapshot includes warm-up requests, while the benchmark table excludes them. The benchmark still measures one machine, build, workload, and network stack. Compare intervals, p95, and failure counts, and use multiple independent benchmark invocations before drawing a broader conclusion. In particular, FIX's connection setup and WebSocket's persistent connection model are part of the transport comparison, while SOAP's larger XML payload and parsing cost are part of the historical comparison this example is intended to expose.
