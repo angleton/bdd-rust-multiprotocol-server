@@ -37,7 +37,7 @@ async fn response_should_be_ok(world: &mut HealthWorld) {
     assert_eq!(world.response_body.as_deref(), Some("ok"));
 }
 
-#[tokio::main]
-async fn main() {
+#[tokio::test]
+async fn health_feature() {
     HealthWorld::run("features/health.feature").await;
 }

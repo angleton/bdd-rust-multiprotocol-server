@@ -39,7 +39,7 @@ async fn response_body_should_be(world: &mut RestGetWorld, expected: String) {
     assert_eq!(world.response_body.as_deref(), Some(expected.as_str()));
 }
 
-#[tokio::main]
-async fn main() {
+#[tokio::test]
+async fn rest_get_feature() {
     RestGetWorld::run("features/rest_get.feature").await;
 }

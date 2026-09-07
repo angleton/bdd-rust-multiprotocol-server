@@ -1,3 +1,4 @@
+pub(crate) mod fix;
 pub(crate) mod graphql;
 pub(crate) mod grpc;
 pub(crate) mod rest;

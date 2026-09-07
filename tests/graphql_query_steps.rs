@@ -58,8 +58,8 @@ async fn graphql_response_should_be(world: &mut GraphqlWorld, expected: String) 
     assert_eq!(actual, Some(expected.as_str()));
 }
 
-#[tokio::main]
-async fn main() {
+#[tokio::test]
+async fn graphql_query_feature() {
     GraphqlWorld::cucumber()
         .run("./features/graphql_query.feature")
         .await;
