@@ -1,3 +1,4 @@
+use crate::Telemetry;
 use axum::http::HeaderMap;
 use serde::Serialize;
 use std::time::{Duration, Instant};
@@ -20,8 +21,18 @@ pub fn from_headers(headers: &HeaderMap) -> Option<(u8, u64)> {
     let cpu_percent = headers.get(CPU_HEADER)?.to_str().ok()?.parse().ok()?;
     let duration_ms = headers.get(DURATION_HEADER)?.to_str().ok()?.parse().ok()?;
 
+    from_values(cpu_percent, duration_ms)
+}
+
+pub fn from_values(cpu_percent: u8, duration_ms: u64) -> Option<(u8, u64)> {
     (cpu_percent <= MAX_CPU_PERCENT && duration_ms <= MAX_DURATION_MS)
         .then_some((cpu_percent, duration_ms))
+}
+
+pub async fn run_from_headers(headers: &HeaderMap, telemetry: &Telemetry) {
+    if let Some((cpu_percent, duration_ms)) = from_headers(headers) {
+        telemetry.record_workload(run(cpu_percent, duration_ms).await);
+    }
 }
 
 pub async fn run(cpu_percent: u8, duration_ms: u64) -> WorkloadSnapshot {

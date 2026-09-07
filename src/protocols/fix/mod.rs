@@ -33,6 +33,9 @@ async fn handle_connection(stream: TcpStream, telemetry: Telemetry) -> io::Resul
     reader.read_until(b'\n', &mut request).await?;
 
     let started = std::time::Instant::now();
+    if let Some((cpu, duration)) = workload_fields(&request) {
+        telemetry.record_workload(crate::workload::run(cpu, duration).await);
+    }
     let response = if is_heartbeat(&request) {
         heartbeat_message()
     } else {
@@ -49,6 +52,19 @@ async fn handle_connection(stream: TcpStream, telemetry: Telemetry) -> io::Resul
         response.len() as u64,
     );
     Ok(())
+}
+
+fn workload_fields(message: &[u8]) -> Option<(u8, u64)> {
+    let mut cpu = None;
+    let mut duration = None;
+    for field in message.split(|byte| *byte == 1 || *byte == b'\n') {
+        if let Some(value) = field.strip_prefix(b"9000=") {
+            cpu = std::str::from_utf8(value).ok()?.parse().ok();
+        } else if let Some(value) = field.strip_prefix(b"9001=") {
+            duration = std::str::from_utf8(value).ok()?.parse().ok();
+        }
+    }
+    crate::workload::from_values(cpu?, duration?)
 }
 
 fn is_heartbeat(message: &[u8]) -> bool {

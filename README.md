@@ -195,6 +195,14 @@ curl http://127.0.0.1:8080/telemetry
 
 The telemetry duration is server-side handler time. It does not include the client connection, network, or process startup. The benchmark below measures end-to-end client-observed latency separately, so both views are available.
 
+Requests can request a controlled comparison workload with the headers
+`x-workload-cpu-percent` and `x-workload-duration-ms`. HTTP protocols and the
+WebSocket upgrade use these headers; gRPC uses the same names as metadata; FIX
+uses tags `9000` (CPU percent) and `9001` (duration in milliseconds). The
+server applies an approximate duty cycle and reports the requested and observed
+values in telemetry. This is intended to equalize application work, not to
+provide an exact operating-system CPU reservation.
+
 ## Compare protocol performance
 
 Run the statistically stronger default benchmark:

@@ -3,12 +3,18 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         State,
     },
+    http::HeaderMap,
     response::Response,
 };
 
 use crate::{protocols::protocol_response, AppState, Telemetry};
 
-pub(crate) async fn handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
+pub(crate) async fn handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Response {
+    crate::workload::run_from_headers(&headers, &state.telemetry).await;
     ws.on_upgrade(move |socket| handle_socket(socket, state.telemetry))
 }
 
