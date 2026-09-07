@@ -261,15 +261,21 @@ async fn benchmark_rest(
     }
     for _ in 0..iterations {
         let started = Instant::now();
-        let success = client
+        let success = match client
             .get(format!("{HTTP_BASE}/hello"))
             .query(&[("payload", payload)])
             .header("x-workload-cpu-percent", cpu_percent.to_string())
             .header("x-workload-duration-ms", duration_ms.to_string())
             .send()
             .await
-            .and_then(|response| response.error_for_status())
-            .is_ok();
+        {
+            Ok(response) if response.status().is_success() => response
+                .text()
+                .await
+                .map(|body| body == "REST message")
+                .unwrap_or(false),
+            _ => false,
+        };
         stats.record(started, success);
     }
     stats
@@ -298,15 +304,21 @@ async fn benchmark_graphql(
     }
     for _ in 0..iterations {
         let started = Instant::now();
-        let success = client
+        let success = match client
             .post(format!("{HTTP_BASE}/graphql"))
             .json(&request)
             .header("x-workload-cpu-percent", cpu_percent.to_string())
             .header("x-workload-duration-ms", duration_ms.to_string())
             .send()
             .await
-            .and_then(|response| response.error_for_status())
-            .is_ok();
+        {
+            Ok(response) if response.status().is_success() => response
+                .json::<serde_json::Value>()
+                .await
+                .map(|body| body["errors"].is_null() && body["data"]["hello"] == "GraphQL message")
+                .unwrap_or(false),
+            _ => false,
+        };
         stats.record(started, success);
     }
     stats
@@ -332,7 +344,7 @@ async fn benchmark_soap(
     }
     for _ in 0..iterations {
         let started = Instant::now();
-        let success = client
+        let success = match client
             .post(format!("{HTTP_BASE}/soap"))
             .header("content-type", "text/xml")
             .header("x-workload-cpu-percent", cpu_percent.to_string())
@@ -340,8 +352,14 @@ async fn benchmark_soap(
             .body(request.to_owned())
             .send()
             .await
-            .and_then(|response| response.error_for_status())
-            .is_ok();
+        {
+            Ok(response) if response.status().is_success() => response
+                .text()
+                .await
+                .map(|body| body.contains("<Message>SOAP message</Message>"))
+                .unwrap_or(false),
+            _ => false,
+        };
         stats.record(started, success);
     }
     stats
@@ -377,7 +395,8 @@ async fn benchmark_grpc(
                 duration_ms,
             ))
             .await
-            .is_ok();
+            .map(|response| response.into_inner().message == "gRPC message")
+            .unwrap_or(false);
         stats.record(started, success);
     }
     stats
@@ -432,6 +451,7 @@ async fn fix_request(request: &[u8]) -> bool {
     }
     let mut response = Vec::new();
     stream.read_to_end(&mut response).await.is_ok()
+        && response.starts_with(b"8=FIX.4.4")
         && response.windows(4).any(|field| field == b"35=0")
 }
 
@@ -488,5 +508,8 @@ async fn websocket_request(
     {
         return false;
     }
-    matches!(socket.next().await, Some(Ok(Message::Text(_))))
+    matches!(
+        socket.next().await,
+        Some(Ok(Message::Text(response))) if response == "WebSocket message"
+    )
 }
