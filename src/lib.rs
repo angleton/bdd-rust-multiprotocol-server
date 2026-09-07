@@ -4,6 +4,7 @@ use tokio::net::TcpListener;
 
 mod protocols;
 mod telemetry;
+mod workload;
 
 pub use telemetry::{ProtocolSnapshot, Telemetry, TelemetrySnapshot};
 
