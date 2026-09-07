@@ -32,6 +32,7 @@ pub fn app_with_telemetry(telemetry: Telemetry) -> Router {
         .route("/hello", get(protocols::rest::hello_handler))
         .route("/graphql", axum::routing::post(protocols::graphql::handler))
         .route("/soap", axum::routing::post(protocols::soap::handler))
+        .route("/ws", axum::routing::get(protocols::websocket::handler))
         .route("/telemetry", get(telemetry_handler))
         .with_state(state)
 }

@@ -1,6 +1,6 @@
 ## BDD Rust Multiprotocol Server
 
-A Rust reference server demonstrating application-layer communication technologies through REST, GraphQL, SOAP, gRPC, and FIX. The project uses Cucumber-style BDD scenarios for the protocol contracts and records request telemetry so the technologies can be compared with the same workload.
+A Rust reference server demonstrating application-layer communication technologies through REST, GraphQL, SOAP, gRPC, FIX, and WebSocket. The project uses Cucumber-style BDD scenarios for the protocol contracts and records request telemetry so the technologies can be compared with the same workload.
 
 ## Prerequisites
 
@@ -26,8 +26,9 @@ The project compares several kinds of application-layer technology. They are oft
 | SOAP | XML messaging protocol |
 | gRPC | RPC framework and protocol stack |
 | FIX | Financial messaging/application protocol |
+| WebSocket | Full-duplex communication protocol over a persistent HTTP-upgraded connection |
 
-In short, this is a multiprotocol application server supporting REST, GraphQL, SOAP, gRPC, and FIX. Each technology performs a hello request while preserving its own wire model:
+In short, this is a multiprotocol application server supporting REST, GraphQL, SOAP, gRPC, FIX, and WebSocket. Each technology performs a hello request while preserving its own wire model:
 
 | Protocol | Request | Success response |
 | --- | --- | --- |
@@ -36,6 +37,7 @@ In short, this is a multiprotocol application server supporting REST, GraphQL, S
 | SOAP | `POST /soap` with a SOAP XML `Envelope` and `PingRequest` body | XML `Envelope` containing `SOAP message` |
 | gRPC | `Hello.SayHello` with `payload` on port `8081` | `HelloReply.message = "gRPC message"` |
 | FIX | TCP message with `35=0` on port `8082` | FIX 4.4 `Heartbeat` with `35=0` |
+| WebSocket | Text message to `ws://127.0.0.1:8080/ws` | Text message `WebSocket message` |
 
 The SOAP handler deliberately models the older XML contract: it parses the envelope, body, and operation instead of accepting arbitrary text. Invalid SOAP-shaped input receives HTTP `400`; valid requests receive `text/xml`.
 
@@ -119,13 +121,15 @@ The feature files describe the expected behavior:
 - [features/soap_acknowledgement.feature](features/soap_acknowledgement.feature) checks SOAP XML content type and acknowledgement.
 - [features/grpc_hello.feature](features/grpc_hello.feature) checks the generated gRPC `SayHello` contract.
 - [features/fix_heartbeat.feature](features/fix_heartbeat.feature) checks the FIX heartbeat acceptor.
+- [features/websocket_message.feature](features/websocket_message.feature) checks the WebSocket text-message contract.
 
 Each scenario starts the server, sends a real request, and asserts the response. The gRPC scenario also proves that the generated protobuf client and server agree on the service definition.
 
-The BDD runners use standard `#[tokio::test]` functions and the normal Cargo test harness, so Rust Analyzer can discover them in VS Code's Testing view. The discovered test names are `health_feature`, `rest_get_feature`, `graphql_query_feature`, `soap_acknowledgement_feature`, `grpc_hello_feature`, and `fix_heartbeat_feature`. Run an individual discovered test with the matching Cargo target, for example:
+The BDD runners use standard `#[tokio::test]` functions and the normal Cargo test harness, so Rust Analyzer can discover them in VS Code's Testing view. The discovered test names are `health_feature`, `rest_get_feature`, `graphql_query_feature`, `soap_acknowledgement_feature`, `grpc_hello_feature`, `fix_heartbeat_feature`, and `websocket_message_feature`. The WebSocket scenario was introduced as a failing Red-phase contract and now passes with the `/ws` implementation. Run an individual discovered test with the matching Cargo target, for example:
 
 ```bash
 cargo test --test fix_heartbeat_steps
+cargo test --test websocket_steps
 ```
 
 Run the full suite with `cargo test --tests`. Do not forward Rust harness flags such as `--test-threads=1` to these targets because the Cucumber runner parses forwarded command-line arguments itself.
@@ -149,7 +153,7 @@ cargo test --test soap_acknowledgement_steps
 cargo test --test grpc_hello_steps
 ```
 
-For a live server investigation, start `cargo run` in one terminal and use the manual requests above from another. HTTP, GraphQL, and SOAP use port `8080`; gRPC uses port `8081`; FIX uses port `8082`. `/telemetry` reports request counts, failures, average handler duration in microseconds, and byte totals. Successful protocol responses identify the protocol; timing remains available through `/telemetry` and the benchmark output.
+For a live server investigation, start `cargo run` in one terminal and use the manual requests above from another. HTTP, GraphQL, SOAP, and WebSocket use port `8080`; gRPC uses port `8081`; FIX uses port `8082`. Send a WebSocket message while the Rust server is running, then request `/telemetry` from the second console to see the `websocket` protocol's real-time message activity, failures, average handler duration in microseconds, and byte totals. Successful protocol responses identify the protocol; timing remains available through `/telemetry` and the benchmark output.
 
 For Rust panic details, enable a backtrace before running the failing command. In PowerShell:
 
