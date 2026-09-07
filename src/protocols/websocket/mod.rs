@@ -33,6 +33,9 @@ async fn handle_socket(mut socket: WebSocket, telemetry: Telemetry) {
                     .await
                     .is_ok();
 
+                // Record each client action as soon as its response is sent. While
+                // `cargo run` is active in a console, `/telemetry` exposes this
+                // real-time WebSocket activity alongside the other protocols.
                 telemetry.record(
                     "websocket",
                     success,
