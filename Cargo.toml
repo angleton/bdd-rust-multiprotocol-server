@@ -33,8 +33,10 @@ tonic-build = "0.12"
 
 [dev-dependencies]
 cucumber = "0.21"
+futures-util = "0.3"
 rand = "0.8"
 reqwest = { version = "0.12", features = ["json"] }
+tokio-tungstenite = "0.24"
 tokio = { version = "1", features = ["full"] }
 
 [[test]]
@@ -54,5 +56,8 @@ name = "grpc_hello_steps"
 
 [[test]]
 name = "fix_heartbeat_steps"
+
+[[test]]
+name = "websocket_steps"
 
 
