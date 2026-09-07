@@ -6,9 +6,16 @@ use std::{
 use bdd_rust_multiprotocol_server::hello::{hello_client::HelloClient, HelloRequest};
 use rand::{seq::SliceRandom, SeedableRng};
 use reqwest::Client;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 const HTTP_BASE: &str = "http://127.0.0.1:18080";
 const GRPC_ENDPOINT: &str = "http://127.0.0.1:18081";
+const FIX_ENDPOINT: &str = "127.0.0.1:18082";
+const WEBSOCKET_ENDPOINT: &str = "ws://127.0.0.1:18080/ws";
 const WARMUP_REQUESTS: usize = 20;
 const DEFAULT_ITERATIONS: usize = 1_000;
 const DEFAULT_RUNS: usize = 20;
@@ -117,11 +124,13 @@ async fn main() {
         ("GraphQL", Stats::default()),
         ("SOAP", Stats::default()),
         ("gRPC", Stats::default()),
+        ("FIX", Stats::default()),
+        ("WebSocket", Stats::default()),
     ];
     let mut randomizer = rand::rngs::StdRng::seed_from_u64(0xBDD_2026);
 
     for run in 0..runs {
-        let mut order = ["REST", "GraphQL", "SOAP", "gRPC"];
+        let mut order = ["REST", "GraphQL", "SOAP", "gRPC", "FIX", "WebSocket"];
         order.shuffle(&mut randomizer);
         println!("run {}/{}: {}", run + 1, runs, order.join(", "));
 
@@ -131,6 +140,8 @@ async fn main() {
                 "GraphQL" => benchmark_graphql(&client, iterations, &payload).await,
                 "SOAP" => benchmark_soap(&client, iterations, &soap_request).await,
                 "gRPC" => benchmark_grpc(iterations, &payload).await,
+                "FIX" => benchmark_fix(iterations).await,
+                "WebSocket" => benchmark_websocket(iterations, &payload).await,
                 _ => unreachable!(),
             };
             results
@@ -148,7 +159,7 @@ async fn main() {
     for (protocol, stats) in &results {
         let (ci_low, ci_high) = stats.confidence_interval_95();
         println!(
-            "{protocol:8} | {:7} | {:10.1} | {:9} | {:6} | {:6.1} - {:6.1} | {:9.1} | {}",
+            "{protocol:10} | {:7} | {:10.1} | {:9} | {:6} | {:6.1} - {:6.1} | {:9.1} | {}",
             stats.samples_us.len(),
             stats.average(),
             stats.percentile(50),
@@ -309,4 +320,68 @@ async fn benchmark_grpc(iterations: usize, payload: &str) -> Stats {
         stats.record(started, success);
     }
     stats
+}
+
+async fn benchmark_fix(iterations: usize) -> Stats {
+    let heartbeat = b"8=FIX.4.4\x019=5\x0135=0\x0110=000\x01\n";
+    let mut stats = Stats::default();
+    for _ in 0..WARMUP_REQUESTS {
+        let _ = fix_request(heartbeat).await;
+    }
+    for _ in 0..iterations {
+        let started = Instant::now();
+        let success = fix_request(heartbeat).await;
+        stats.record(started, success);
+    }
+    stats
+}
+
+async fn fix_request(request: &[u8]) -> bool {
+    let Ok(mut stream) = TcpStream::connect(FIX_ENDPOINT).await else {
+        return false;
+    };
+    if stream.write_all(request).await.is_err() {
+        return false;
+    }
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).await.is_ok()
+        && response.windows(4).any(|field| field == b"35=0")
+}
+
+async fn benchmark_websocket(iterations: usize, payload: &str) -> Stats {
+    let Ok((mut socket, _)) = connect_async(WEBSOCKET_ENDPOINT).await else {
+        return Stats {
+            failures: WARMUP_REQUESTS + iterations,
+            ..Stats::default()
+        };
+    };
+    for _ in 0..WARMUP_REQUESTS {
+        let _ = websocket_request(&mut socket, payload).await;
+    }
+    let mut stats = Stats::default();
+    for _ in 0..iterations {
+        let started = Instant::now();
+        let success = websocket_request(&mut socket, payload).await;
+        stats.record(started, success);
+    }
+    let _ = socket.close(None).await;
+    stats
+}
+
+async fn websocket_request(
+    socket: &mut tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+    payload: &str,
+) -> bool {
+    use futures_util::{SinkExt, StreamExt};
+
+    if socket
+        .send(Message::Text(payload.to_owned().into()))
+        .await
+        .is_err()
+    {
+        return false;
+    }
+    matches!(socket.next().await, Some(Ok(Message::Text(_))))
 }
