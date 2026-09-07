@@ -44,6 +44,36 @@ curl http://127.0.0.1:8080/telemetry
 
 The gRPC contract is in [proto/hello.proto](proto/hello.proto). The generated client is used by the BDD test, so `cargo test` verifies the RPC without requiring a separate client tool.
 
+## First PowerShell experiment
+
+The original small idea behind this project can also be expressed in PowerShell using Pester. The example at [examples/scripts/rest-query.Tests.ps1](examples/scripts/rest-query.Tests.ps1) describes a REST request with Given/When/Then-style comments, sends it with `Invoke-RestMethod`, and verifies that the response identifies the REST protocol.
+
+With Pester installed, start the Rust server in one terminal:
+
+```powershell
+cargo run
+```
+
+Then run the first PowerShell scenario from another terminal:
+
+```powershell
+Invoke-Pester .\examples\scripts\rest-query.Tests.ps1 -PassThru
+```
+
+Install Pester for the current user if needed:
+
+```powershell
+Install-Module -Name Pester -Scope CurrentUser -Force
+```
+
+The script accepts a different server address or payload for debugging through environment variables:
+
+```powershell
+$env:REST_BASE_URL = "http://127.0.0.1:8080"
+$env:REST_PAYLOAD = "debug"
+Invoke-Pester .\examples\scripts\rest-query.Tests.ps1
+```
+
 ## BDD tests
 
 Run all protocol scenarios:
@@ -160,3 +190,4 @@ The confidence interval describes uncertainty in the measured mean; it does not 
 - `features/`: Gherkin scenarios.
 - `tests/`: Cucumber step implementations.
 - `examples/protocol_benchmark.rs`: repeatable cross-protocol benchmark.
+- `examples/scripts/rest-query.Tests.ps1`: the original REST request idea expressed as a Pester scenario.
