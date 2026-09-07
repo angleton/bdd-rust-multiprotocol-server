@@ -148,7 +148,12 @@ The confidence interval describes uncertainty in the measured mean; it does not 
 
 ## Project layout
 
-- `src/lib.rs`: HTTP routes, GraphQL schema, SOAP parser, gRPC service, and telemetry.
+- `src/lib.rs`: application composition, shared state, routes, and server startup.
+- `src/protocols/rest/mod.rs`: REST handler and payload query parsing.
+- `src/protocols/graphql/mod.rs`: GraphQL schema and handler.
+- `src/protocols/soap/mod.rs`: SOAP envelope parser and acknowledgement handler.
+- `src/protocols/grpc/mod.rs`: gRPC server and `SayHello` implementation.
+- `src/telemetry.rs`: shared protocol telemetry and snapshots.
 - `src/main.rs`: production server entry point.
 - `proto/hello.proto`: gRPC service contract.
 - `build.rs`: protobuf code generation.
