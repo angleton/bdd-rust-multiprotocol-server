@@ -1,6 +1,6 @@
 ## BDD Rust Multiprotocol Server
 
-A Rust reference server that exposes the same small `hello` operation through REST, GraphQL, SOAP, and gRPC. The project uses Cucumber-style BDD scenarios for the protocol contracts and records request telemetry so the protocols can be compared with the same workload.
+A Rust reference server demonstrating application-layer communication technologies through REST, GraphQL, SOAP, gRPC, and FIX. The project uses Cucumber-style BDD scenarios for the protocol contracts and records request telemetry so the technologies can be compared with the same workload.
 
 ## Prerequisites
 
@@ -17,7 +17,17 @@ The HTTP server listens on `127.0.0.1:8080`. The gRPC server listens on `127.0.0
 
 ## Protocols
 
-Every protocol performs a hello request, but each keeps its era's wire model:
+The project compares several kinds of application-layer technology. They are often called protocols collectively, but their precise classifications differ:
+
+| Technology | Precise classification |
+| --- | --- |
+| REST | Architectural style for HTTP APIs |
+| GraphQL | Query language and API execution/runtime |
+| SOAP | XML messaging protocol |
+| gRPC | RPC framework and protocol stack |
+| FIX | Financial messaging/application protocol |
+
+In short, this is a multiprotocol application server supporting REST, GraphQL, SOAP, gRPC, and FIX. Each technology performs a hello request while preserving its own wire model:
 
 | Protocol | Request | Success response |
 | --- | --- | --- |
