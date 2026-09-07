@@ -15,9 +15,9 @@ struct SoapWorld {
 async fn server_is_running(world: &mut SoapWorld) {
     let app = bdd_rust_multiprotocol_server::app();
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
+    let listener = bdd_rust_multiprotocol_server::bind_http("127.0.0.1:8080".parse().unwrap())
         .await
-        .expect("Failed to bind test server to port 8080");
+        .expect("Cannot start test server: port 8080 is already in use. Stop the standalone server (`cargo run`) before running BDD tests.");
 
     let handle = tokio::spawn(async move {
         axum::serve(listener, app)

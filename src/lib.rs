@@ -1,5 +1,6 @@
 use axum::{extract::State, routing::get, Json, Router};
 use std::net::SocketAddr;
+use tokio::net::TcpListener;
 
 mod protocols;
 mod telemetry;
@@ -46,7 +47,27 @@ async fn telemetry_handler(State(state): State<AppState>) -> Json<TelemetrySnaps
     Json(state.telemetry.snapshot())
 }
 
+pub async fn bind_http(addr: SocketAddr) -> std::io::Result<TcpListener> {
+    TcpListener::bind(addr).await.map_err(|error| {
+        std::io::Error::new(
+            error.kind(),
+            format!("cannot bind HTTP server to {addr}: {error}"),
+        )
+    })
+}
+
 pub async fn run(addr: SocketAddr) {
+    let listener = bind_http(addr).await.unwrap_or_else(|error| {
+        panic!(
+            "Cannot start standalone server on {addr}: another server may already be running. Stop it before running `cargo run`. Details: {error}"
+        )
+    });
+
+    println!("Server running at http://{addr}");
+    run_with_listener(addr, listener).await;
+}
+
+pub async fn run_with_listener(addr: SocketAddr, listener: TcpListener) {
     let telemetry = Telemetry::default();
     let grpc_addr = grpc_addr(addr);
     let fix_addr = fix_addr(addr);
@@ -60,10 +81,6 @@ pub async fn run(addr: SocketAddr) {
     tokio::spawn(async move {
         protocols::fix::serve(fix_addr, fix_telemetry).await;
     });
-
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .expect("failed to bind address");
 
     axum::serve(listener, app_with_telemetry(telemetry))
         .await

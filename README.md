@@ -93,6 +93,24 @@ Run all protocol scenarios:
 cargo test --tests
 ```
 
+These tests do not require a server to be running in another terminal. Each BDD
+scenario starts the application, or the relevant application router, inside its
+own test process, sends a real request over `127.0.0.1`, and then exits when the
+test finishes. The temporary server is therefore expected to disappear from
+Task Manager after the test completes. `cargo test` runs the test binaries; it
+does not start the persistent executable from `src/main.rs`.
+
+To run the server as a standalone process for manual requests, PowerShell
+scenarios, or external clients, use `cargo run` and leave that terminal open.
+The standalone process uses HTTP port `8080`, gRPC port `8081`, and FIX port
+`8082`. The BDD tests use those same ports while they are running, so do not
+run a standalone server at the same time as the BDD suite. Both startup paths
+reserve HTTP port `8080` before launching the other protocol tasks. If the port
+is already occupied, startup stops immediately with an explicit message telling
+you which process to stop. On Windows, a running executable may also cause
+Cargo to report `Access is denied` while it is trying to rebuild that executable;
+stop `cargo run` and retry the test command in that case.
+
 The feature files describe the expected behavior:
 
 - [features/health.feature](features/health.feature) checks server liveness.

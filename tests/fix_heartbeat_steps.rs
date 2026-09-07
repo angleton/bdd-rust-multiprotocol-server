@@ -17,8 +17,11 @@ struct FixWorld {
 #[given("the server is running")]
 async fn server_is_running(world: &mut FixWorld) {
     let address = "127.0.0.1:8080".parse().unwrap();
+    let listener = bdd_rust_multiprotocol_server::bind_http(address)
+        .await
+        .expect("Cannot start test server: port 8080 is already in use. Stop the standalone server (`cargo run`) before running BDD tests.");
     let handle = tokio::spawn(async move {
-        bdd_rust_multiprotocol_server::run(address).await;
+        bdd_rust_multiprotocol_server::run_with_listener(address, listener).await;
     });
 
     world.server_handle = Some(handle);
