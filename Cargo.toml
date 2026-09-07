@@ -60,4 +60,7 @@ name = "fix_heartbeat_steps"
 [[test]]
 name = "websocket_steps"
 
+[[test]]
+name = "controlled_workload_steps"
+
 

@@ -122,14 +122,16 @@ The feature files describe the expected behavior:
 - [features/grpc_hello.feature](features/grpc_hello.feature) checks the generated gRPC `SayHello` contract.
 - [features/fix_heartbeat.feature](features/fix_heartbeat.feature) checks the FIX heartbeat acceptor.
 - [features/websocket_message.feature](features/websocket_message.feature) checks the WebSocket text-message contract.
+- [features/controlled_workload.feature](features/controlled_workload.feature) defines the cross-protocol workload contract.
 
 Each scenario starts the server, sends a real request, and asserts the response. The gRPC scenario also proves that the generated protobuf client and server agree on the service definition.
 
-The BDD runners use standard `#[tokio::test]` functions and the normal Cargo test harness, so Rust Analyzer can discover them in VS Code's Testing view. The discovered test names are `health_feature`, `rest_get_feature`, `graphql_query_feature`, `soap_acknowledgement_feature`, `grpc_hello_feature`, `fix_heartbeat_feature`, and `websocket_message_feature`. The WebSocket scenario was introduced as a failing Red-phase contract and now passes with the `/ws` implementation. Run an individual discovered test with the matching Cargo target, for example:
+The BDD runners use standard `#[tokio::test]` functions and the normal Cargo test harness, so Rust Analyzer can discover them in VS Code's Testing view. The discovered test names include `health_feature`, `rest_get_feature`, `graphql_query_feature`, `soap_acknowledgement_feature`, `grpc_hello_feature`, `fix_heartbeat_feature`, `websocket_message_feature`, and `controlled_workload_feature`. The controlled-workload scenario is intentionally red until all protocol handlers accept and report the same workload contract. Run an individual discovered test with the matching Cargo target, for example:
 
 ```bash
 cargo test --test fix_heartbeat_steps
 cargo test --test websocket_steps
+cargo test --test controlled_workload_steps
 ```
 
 Run the full suite with `cargo test --tests`. Do not forward Rust harness flags such as `--test-threads=1` to these targets because the Cucumber runner parses forwarded command-line arguments itself.
