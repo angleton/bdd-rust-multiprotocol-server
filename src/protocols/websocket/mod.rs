@@ -3,16 +3,22 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         State,
     },
+    http::HeaderMap,
     response::Response,
 };
 
 use crate::{protocols::protocol_response, AppState, Telemetry};
 
-pub(crate) async fn handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
-    ws.on_upgrade(move |socket| handle_socket(socket, state.telemetry))
+pub(crate) async fn handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Response {
+    let workload = crate::workload::from_headers(&headers);
+    ws.on_upgrade(move |socket| handle_socket(socket, state.telemetry, workload))
 }
 
-async fn handle_socket(mut socket: WebSocket, telemetry: Telemetry) {
+async fn handle_socket(mut socket: WebSocket, telemetry: Telemetry, workload: Option<(u8, u64)>) {
     while let Some(result) = socket.recv().await {
         let message = match result {
             Ok(message) => message,
@@ -25,6 +31,9 @@ async fn handle_socket(mut socket: WebSocket, telemetry: Telemetry) {
         let started = std::time::Instant::now();
         match message {
             Message::Text(request) => {
+                if let Some((cpu_percent, duration_ms)) = workload {
+                    telemetry.record_workload(crate::workload::run(cpu_percent, duration_ms).await);
+                }
                 let response = protocol_response("WebSocket");
                 let request_bytes = request.len() as u64;
                 let response_bytes = response.len() as u64;

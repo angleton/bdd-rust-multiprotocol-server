@@ -122,14 +122,16 @@ The feature files describe the expected behavior:
 - [features/grpc_hello.feature](features/grpc_hello.feature) checks the generated gRPC `SayHello` contract.
 - [features/fix_heartbeat.feature](features/fix_heartbeat.feature) checks the FIX heartbeat acceptor.
 - [features/websocket_message.feature](features/websocket_message.feature) checks the WebSocket text-message contract.
+- [features/controlled_workload.feature](features/controlled_workload.feature) defines the cross-protocol workload contract.
 
 Each scenario starts the server, sends a real request, and asserts the response. The gRPC scenario also proves that the generated protobuf client and server agree on the service definition.
 
-The BDD runners use standard `#[tokio::test]` functions and the normal Cargo test harness, so Rust Analyzer can discover them in VS Code's Testing view. The discovered test names are `health_feature`, `rest_get_feature`, `graphql_query_feature`, `soap_acknowledgement_feature`, `grpc_hello_feature`, `fix_heartbeat_feature`, and `websocket_message_feature`. The WebSocket scenario was introduced as a failing Red-phase contract and now passes with the `/ws` implementation. Run an individual discovered test with the matching Cargo target, for example:
+The BDD runners use standard `#[tokio::test]` functions and the normal Cargo test harness, so Rust Analyzer can discover them in VS Code's Testing view. The discovered test names include `health_feature`, `rest_get_feature`, `graphql_query_feature`, `soap_acknowledgement_feature`, `grpc_hello_feature`, `fix_heartbeat_feature`, `websocket_message_feature`, and `controlled_workload_feature`. The controlled-workload scenario is intentionally red until all protocol handlers accept and report the same workload contract. Run an individual discovered test with the matching Cargo target, for example:
 
 ```bash
 cargo test --test fix_heartbeat_steps
 cargo test --test websocket_steps
+cargo test --test controlled_workload_steps
 ```
 
 Run the full suite with `cargo test --tests`. Do not forward Rust harness flags such as `--test-threads=1` to these targets because the Cucumber runner parses forwarded command-line arguments itself.
@@ -193,6 +195,14 @@ curl http://127.0.0.1:8080/telemetry
 
 The telemetry duration is server-side handler time. It does not include the client connection, network, or process startup. The benchmark below measures end-to-end client-observed latency separately, so both views are available.
 
+Requests can request a controlled comparison workload with the headers
+`x-workload-cpu-percent` and `x-workload-duration-ms`. HTTP protocols and the
+WebSocket upgrade use these headers; gRPC uses the same names as metadata; FIX
+uses tags `9000` (CPU percent) and `9001` (duration in milliseconds). The
+server applies an approximate duty cycle and reports the requested and observed
+values in telemetry. This is intended to equalize application work, not to
+provide an exact operating-system CPU reservation.
+
 ## Compare protocol performance
 
 Run the statistically stronger default benchmark:
@@ -215,22 +225,90 @@ cargo run --example protocol_benchmark -- 10 2 1024
 cargo run --release --example protocol_benchmark -- 1000 20 65536
 ```
 
-The payload generator produces a deterministic alphanumeric string of exactly `payload_bytes` characters. That value is sent through REST, GraphQL, SOAP, gRPC, and WebSocket; these handlers return their protocol-specific fixed response rather than echoing the payload. FIX uses a fixed heartbeat because its current server implementation handles heartbeat messages rather than arbitrary payloads. Each FIX sample opens a TCP connection, sends one heartbeat, reads the response, and closes the connection. WebSocket opens one upgraded connection per run and measures repeated text-message exchanges over that persistent connection. The run exercises request parsing, serialization, transport, and response handling for the selected size where the protocol supports it. The benchmark reports the aggregate sample count, average, median, p95, standard deviation, 95% confidence interval for the average, and failures, then names the winner as the protocol with the lowest average end-to-end latency among protocols with zero failures. The confidence interval is calculated from the independent run-level averages rather than treating every request as independent. It also prints the server `/telemetry` snapshot for the same run.
+Add optional `cpu_percent` and `duration_ms` arguments to apply the same
+controlled workload to every measured request through each protocol's native
+metadata path. For example, this applies approximately 3% CPU duty cycle for
+10 milliseconds per request:
 
-The benchmark table labels are `protocol`, `samples`, `average_us` (mean latency in microseconds), `median_us` (50th percentile latency), `p95_us` (95th percentile latency), `95%_ci_us` (confidence interval for the mean), `stddev_us`, and `failures`:
+```bash
+cargo run --release --example protocol_benchmark -- 100 20 4096 3 10
+```
+
+The default values are `0` and `0`, which disable the extra workload so the
+original transport-focused benchmark remains quick to run.
+
+The payload generator produces a deterministic alphanumeric string of exactly `payload_bytes` characters. That value is sent through REST, GraphQL, SOAP, gRPC, and WebSocket; these handlers return their protocol-specific fixed response rather than echoing the payload. FIX uses a fixed heartbeat because its current server implementation handles heartbeat messages rather than arbitrary payloads. Each FIX sample opens a TCP connection, sends one heartbeat, reads the response, and closes the connection. WebSocket opens one upgraded connection per run and measures repeated text-message exchanges over that persistent connection. Measured samples validate the protocol-specific response content, not merely an HTTP status or successful RPC transport. The run exercises request parsing, serialization, transport, and response handling for the selected size where the protocol supports it. The benchmark reports the aggregate sample count, average, median, p95, standard deviation, 95% confidence interval for the average, and failures, then names the winner as the protocol with the lowest average end-to-end latency among protocols with zero failures. The confidence interval is calculated from the independent run-level averages rather than treating every request as independent. It also prints the server `/telemetry` snapshot for the same run.
+
+The benchmark table labels are `protocol`, `samples`, `average_us` (mean latency in microseconds), `median_us` (50th percentile latency), `p95_us` (95th percentile latency), `95%_ci_us` (confidence interval for the mean), `stddev_us`, and `failures`. Rows are sorted by ascending average latency so the fastest result appears first:
 
 ```text
 protocol | samples | average_us | median_us | p95_us | 95%_ci_us       | stddev_us | failures
 ---------|---------|------------|-----------|--------|------------------|-----------|---------
-FIX      |   20000 |      404.7 |       332 |    485 |  384.7 -  424.6 |     945.0 | 0
-gRPC     |   20000 |      157.0 |       150 |    207 |  154.9 -  159.2 |      33.7 | 0
-GraphQL  |   20000 |      132.8 |       125 |    184 |  130.5 -  135.1 |      32.2 | 0
-REST     |   20000 |      121.7 |       113 |    170 |  119.5 -  123.9 |      31.3 | 0
-SOAP     |   20000 |       98.0 |        93 |    137 |   96.1 -   99.9 |      27.9 | 0
-WebSocket |   20000 |       56.8 |        50 |     90 |   55.6 -   58.0 |      25.4 | 0
+WebSocket |   20000 |       64.6 |        61 |    103 |   60.6 -   68.6 |      27.4 | 0
+SOAP     |   20000 |      116.0 |       111 |    172 |  107.1 -  124.9 |      36.2 | 0
+REST     |   20000 |      145.9 |       139 |    223 |  134.4 -  157.4 |      41.5 | 0
+GraphQL  |   20000 |      158.8 |       159 |    231 |  146.9 -  170.8 |      43.9 | 0
+gRPC     |   20000 |      173.5 |       166 |    248 |  164.2 -  182.7 |      45.0 | 0
+FIX      |   20000 |      464.1 |       352 |    555 |  434.9 -  493.3 |    1207.6 | 0
 ```
 
-These values were produced by the default release benchmark on September 7, 2026: 20 runs, 1,000 measured requests per protocol per run, a 4,096-byte generated payload, 20 warm-ups per protocol per run, and a fixed randomization seed. The confidence interval describes uncertainty in the measured mean; it does not make the result a universal ranking of the technologies. The server telemetry snapshot includes warm-up requests, while the benchmark table excludes them. The benchmark still measures one machine, build, workload, and network stack. Compare intervals, p95, and failure counts, and use multiple independent benchmark invocations before drawing a broader conclusion. In particular, FIX's connection setup and WebSocket's persistent connection model are part of the transport comparison, while SOAP's larger XML payload and parsing cost are part of the historical comparison this example is intended to expose.
+These values were produced by the default release benchmark on September 7, 2026: 20 runs, 1,000 measured requests per protocol per run, a 4,096-byte generated payload, 20 warm-ups per protocol per run, a fixed randomization seed, and protocol-specific response-content validation. The confidence interval describes uncertainty in the measured mean; it does not make the result a universal ranking of the technologies. The server telemetry snapshot includes warm-up requests, while the benchmark table excludes them. The benchmark still measures one machine, build, workload, and network stack. Compare intervals, p95, and failure counts, and use multiple independent benchmark invocations before drawing a broader conclusion. In particular, FIX's connection setup and WebSocket's persistent connection model are part of the transport comparison, while SOAP's larger XML payload and parsing cost are part of the historical comparison this example is intended to expose.
+
+### Equalized workload experiment
+
+The optional workload controls make a different question possible: how much
+does each protocol's end-to-end request cost after assigning every request the
+same approximate application workload? A fresh experiment on September 7,
+2026 used `20` runs, `50` measured requests per protocol per run, `20` warm-ups,
+a `4,096`-byte payload, and approximately `3%` CPU duty cycle for `10` ms per
+request. Measured samples validated each protocol's response content. That
+produced `1,000` measured samples per protocol with zero failures:
+
+```text
+protocol | samples | average_us | median_us | p95_us | 95%_ci_us       | stddev_us | failures
+---------|---------|------------|-----------|--------|------------------|-----------|---------
+gRPC     |    1000 |    16430.4 |     16432 |  20014 | 16200.1 - 16660.7 |    2076.3 | 0
+REST     |    1000 |    16437.9 |     16396 |  19110 | 16253.8 - 16622.1 |    1776.5 | 0
+WebSocket |    1000 |    16448.8 |     16536 |  19067 | 16076.7 - 16820.9 |    2030.9 | 0
+FIX      |    1000 |    16502.3 |     16386 |  19234 | 16255.8 - 16748.9 |    2196.8 | 0
+GraphQL  |    1000 |    16516.9 |     16544 |  19094 | 16231.7 - 16802.0 |    1903.3 | 0
+SOAP     |    1000 |    16636.8 |     16536 |  19057 | 16543.5 - 16730.1 |    1643.5 | 0
+```
+
+**Important: In this equalized-workload experiment, the protocol results are statistically indistinguishable. In particular, gRPC and WebSocket are effectively tied; the 18.4-microsecond average difference is not evidence that gRPC is genuinely faster. Do not interpret the sorted rows as a definitive performance ranking.**
+
+Unlike the transport-focused table above, these intervals overlap heavily.
+That is expected: the shared 10 ms workload dominates the protocol-specific
+overhead. WebSocket no longer appears artificially fast because the workload
+runs for each text-message exchange, not only once during connection setup.
+Likewise, this experiment does not establish a meaningful gRPC-over-SOAP
+victory; it demonstrates that equalized application work can make transport
+differences comparatively small. Use the workload-free experiment to study
+transport overhead and the equalized experiment to study behavior when the
+application performs a comparable amount of work.
+
+### Interpreting SOAP's result
+
+SOAP is not formally deprecated. It remains supported and is still common in
+enterprise, government, healthcare, banking, and other systems that depend on
+WSDL contracts, WS-Security, reliable messaging, transactions, or long-lived
+interoperability requirements. It is simply less often selected for new public
+APIs, where REST, gRPC, or GraphQL usually offer a simpler developer and
+deployment experience.
+
+The strong SOAP result in this project should not be read as evidence that SOAP
+is generally faster than gRPC or WebSocket. This server's SOAP path parses a
+small fixed XML envelope and creates a fixed acknowledgement without modeling
+schema validation, WS-Security, signatures, attachments, or complex nested
+documents. The benchmark therefore measures this deliberately lightweight Rust
+implementation, not the full cost of a typical enterprise SOAP deployment.
+
+The broader protocol-selection lesson is that speed is only one dimension:
+WebSocket is a persistent bidirectional message channel, gRPC provides typed
+service contracts and streaming, REST maximizes broad HTTP compatibility,
+GraphQL supports client-shaped queries, and SOAP provides formal enterprise
+messaging standards. These benchmark results describe the implementations and
+workloads above; they do not establish a universal best protocol.
 
 ## Project layout
 

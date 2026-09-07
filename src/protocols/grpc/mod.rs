@@ -24,6 +24,23 @@ impl hello::hello_server::Hello for GrpcHello {
         request: Request<hello::HelloRequest>,
     ) -> Result<Response<hello::HelloReply>, Status> {
         let started = std::time::Instant::now();
+        if let (Some(cpu), Some(duration)) = (
+            request
+                .metadata()
+                .get("x-workload-cpu-percent")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse().ok()),
+            request
+                .metadata()
+                .get("x-workload-duration-ms")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse().ok()),
+        ) {
+            if let Some((cpu, duration)) = crate::workload::from_values(cpu, duration) {
+                self.telemetry
+                    .record_workload(crate::workload::run(cpu, duration).await);
+            }
+        }
         let request = request.into_inner();
         let response_message = protocol_response("gRPC");
         self.telemetry.record(

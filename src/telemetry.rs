@@ -5,9 +5,14 @@ use std::{
     time::Duration,
 };
 
+use crate::workload::WorkloadSnapshot;
+
+const PROTOCOLS: [&str; 6] = ["fix", "grpc", "graphql", "rest", "soap", "websocket"];
+
 #[derive(Clone, Default)]
 pub struct Telemetry {
     protocols: Arc<Mutex<BTreeMap<String, ProtocolTelemetry>>>,
+    workload: Arc<Mutex<Option<WorkloadSnapshot>>>,
 }
 
 #[derive(Clone, Default, Serialize)]
@@ -31,6 +36,7 @@ pub struct ProtocolSnapshot {
     pub average_duration_us: f64,
     pub request_bytes: u64,
     pub response_bytes: u64,
+    pub workload: Option<WorkloadSnapshot>,
 }
 
 impl Telemetry {
@@ -53,8 +59,17 @@ impl Telemetry {
         entry.response_bytes += response_bytes;
     }
 
+    pub(crate) fn record_workload(&self, workload: WorkloadSnapshot) {
+        *self.workload.lock().expect("workload lock poisoned") = Some(workload);
+    }
+
     pub fn snapshot(&self) -> TelemetrySnapshot {
         let protocols = self.protocols.lock().expect("telemetry lock poisoned");
+        let workload = self
+            .workload
+            .lock()
+            .expect("workload lock poisoned")
+            .clone();
         TelemetrySnapshot {
             protocols: protocols
                 .iter()
@@ -71,9 +86,24 @@ impl Telemetry {
                             },
                             request_bytes: metrics.request_bytes,
                             response_bytes: metrics.response_bytes,
+                            workload: workload.clone(),
                         },
                     )
                 })
+                .chain(
+                    PROTOCOLS
+                        .iter()
+                        .filter(|protocol| !protocols.contains_key(**protocol))
+                        .map(|protocol| {
+                            (
+                                (*protocol).to_string(),
+                                ProtocolSnapshot {
+                                    workload: workload.clone(),
+                                    ..ProtocolSnapshot::default()
+                                },
+                            )
+                        }),
+                )
                 .collect(),
         }
     }

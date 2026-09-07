@@ -1,6 +1,6 @@
 use async_graphql::{EmptyMutation, EmptySubscription, Object, Schema};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
-use axum::extract::State;
+use axum::{extract::State, http::HeaderMap};
 
 use crate::{protocols::protocol_response, AppState};
 
@@ -21,9 +21,11 @@ impl QueryRoot {
 
 pub(crate) async fn handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     request: GraphQLRequest,
 ) -> GraphQLResponse {
     let started = std::time::Instant::now();
+    crate::workload::run_from_headers(&headers, &state.telemetry).await;
     let request = request.into_inner().data(started);
     let request_bytes = request.query.len() as u64;
     let response = state.schema.execute(request).await;

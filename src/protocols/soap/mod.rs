@@ -1,15 +1,20 @@
 use axum::{
     body::Bytes,
     extract::State,
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::IntoResponse,
 };
 use quick_xml::{events::Event, Reader};
 
 use crate::{protocols::protocol_response, AppState};
 
-pub(crate) async fn handler(State(state): State<AppState>, body: Bytes) -> impl IntoResponse {
+pub(crate) async fn handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> impl IntoResponse {
     let started = std::time::Instant::now();
+    crate::workload::run_from_headers(&headers, &state.telemetry).await;
     let Some(_payload) = ping_payload(&body) else {
         state
             .telemetry
