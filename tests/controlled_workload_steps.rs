@@ -3,7 +3,11 @@ use std::time::Duration;
 use cucumber::{given, then, when, World};
 use reqwest::Client;
 use serde_json::Value;
+use sysinfo::System;
 use tokio::task::JoinHandle;
+
+const MAX_STARTUP_CPU_PERCENT: f32 = 20.0;
+const RESOURCE_WAIT_TIMEOUT_SECS: u64 = 30;
 
 const PROTOCOLS: [&str; 6] = ["fix", "grpc", "graphql", "rest", "soap", "websocket"];
 
@@ -16,8 +20,40 @@ struct ControlledWorkloadWorld {
     telemetry: Option<Value>,
 }
 
+async fn wait_for_system_resources() {
+    let start = tokio::time::Instant::now();
+
+    loop {
+        let mut system = System::new();
+        system.refresh_cpu();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        system.refresh_cpu();
+
+        let cpu_percent = system.global_cpu_info().cpu_usage();
+
+        if cpu_percent <= MAX_STARTUP_CPU_PERCENT {
+            println!("System resources available: CPU usage is {cpu_percent:.1}%");
+            return;
+        }
+
+        println!(
+            "Waiting for system resource: CPU usage is {cpu_percent:.1}% \
+             (target: <= {MAX_STARTUP_CPU_PERCENT:.1}%)"
+        );
+
+        if start.elapsed().as_secs() >= RESOURCE_WAIT_TIMEOUT_SECS {
+            panic!(
+                "Timed out waiting for system resources: CPU usage remained \
+                 above {MAX_STARTUP_CPU_PERCENT:.1}%"
+            );
+        }
+    }
+}
+
 #[given("the server is running")]
 async fn server_is_running(world: &mut ControlledWorkloadWorld) {
+    wait_for_system_resources().await;
+
     let address = "127.0.0.1:8080".parse().unwrap();
     let listener = bdd_rust_multiprotocol_server::bind_http(address)
         .await

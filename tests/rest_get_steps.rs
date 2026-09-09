@@ -29,10 +29,7 @@ async fn send_rest_get_request(world: &mut RestGetWorld, path: String) {
         .await
         .expect("failed to send REST GET request");
 
-    let body = response
-        .text()
-        .await
-        .expect("failed to read response body");
+    let body = response.text().await.expect("failed to read response body");
 
     world.response_body = Some(body);
 }

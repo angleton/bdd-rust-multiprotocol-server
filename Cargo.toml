@@ -38,6 +38,7 @@ rand = "0.8"
 reqwest = { version = "0.12", features = ["json"] }
 tokio-tungstenite = "0.24"
 tokio = { version = "1", features = ["full"] }
+sysinfo = "0.30.13"
 
 [[test]]
 name = "health_steps"

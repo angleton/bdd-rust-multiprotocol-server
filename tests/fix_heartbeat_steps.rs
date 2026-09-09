@@ -50,7 +50,10 @@ async fn send_fix_heartbeat(world: &mut FixWorld) {
 
 #[then(expr = "the FIX response should contain message type {string}")]
 async fn fix_response_should_contain_message_type(world: &mut FixWorld, message_type: String) {
-    let response = world.response.as_ref().expect("No FIX response was captured");
+    let response = world
+        .response
+        .as_ref()
+        .expect("No FIX response was captured");
     assert!(response.contains(&format!("35={message_type}")));
 }
 

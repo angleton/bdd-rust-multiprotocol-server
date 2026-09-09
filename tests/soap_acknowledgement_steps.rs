@@ -20,9 +20,7 @@ async fn server_is_running(world: &mut SoapWorld) {
         .expect("Cannot start test server: port 8080 is already in use. Stop the standalone server (`cargo run`) before running BDD tests.");
 
     let handle = tokio::spawn(async move {
-        axum::serve(listener, app)
-            .await
-            .expect("Server failed");
+        axum::serve(listener, app).await.expect("Server failed");
     });
 
     world.server_handle = Some(handle);

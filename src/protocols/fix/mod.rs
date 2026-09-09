@@ -84,11 +84,7 @@ fn reject_message() -> Vec<u8> {
 fn build_message(body: &[u8]) -> Vec<u8> {
     let mut message = format!("8=FIX.4.4\x019={}\x01", body.len()).into_bytes();
     message.extend_from_slice(body);
-    let checksum = message
-        .iter()
-        .map(|byte| *byte as u32)
-        .sum::<u32>()
-        % 256;
+    let checksum = message.iter().map(|byte| *byte as u32).sum::<u32>() % 256;
     message.extend_from_slice(format!("10={checksum:03}\x01\n").as_bytes());
     message
 }

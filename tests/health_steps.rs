@@ -27,10 +27,7 @@ async fn request_health_endpoint(world: &mut HealthWorld) {
         .await
         .expect("failed to call health endpoint");
 
-    let body = response
-        .text()
-        .await
-        .expect("failed to read response body");
+    let body = response.text().await.expect("failed to read response body");
 
     world.response_body = Some(body);
 }
